@@ -2,10 +2,20 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <title>Finance Tracker</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+// Expand to full screen immediately, before anything else loads
+try {
+  const tg = window.Telegram?.WebApp;
+  if (tg) {
+    tg.ready();
+    tg.expand();
+    if (tg.requestFullscreen) tg.requestFullscreen();
+  }
+} catch(e) {}
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.5.0/Recharts.js"></script>
@@ -13,17 +23,46 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
 html,body,#root{height:100%;overflow:hidden;}
-body{font-family:'DM Sans',sans-serif;overscroll-behavior:none;}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Arial,sans-serif;
+  overscroll-behavior:none;
+  background:#0a0f1e;
+}
 ::-webkit-scrollbar{width:0;height:0;}
-input,select,textarea,button{font-family:'DM Sans',sans-serif;outline:none;border:none;}
+input,select,textarea,button{
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Arial,sans-serif;
+  outline:none;border:none;
+}
 input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;}
 .slide-up{animation:slideUp .25s ease;}
 @keyframes slideUp{from{transform:translateY(20px);opacity:0;}to{transform:translateY(0);opacity:1;}}
 .fade-in{animation:fadeIn .2s ease;}
 @keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+#splash{
+  position:fixed;inset:0;background:#0a0f1e;
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  z-index:9999;transition:opacity .3s ease;
+}
+#splash.hidden{opacity:0;pointer-events:none;}
+.spinner{
+  width:40px;height:40px;border:3px solid #1e2d3d;
+  border-top-color:#10b981;border-radius:50%;
+  animation:spin 0.8s linear infinite;margin-bottom:16px;
+}
+@keyframes spin{to{transform:rotate(360deg);}}
 </style>
 </head>
 <body>
+
+<!-- Splash screen shown while Babel compiles -->
+<div id="splash">
+  <div style="font-size:48px;margin-bottom:16px">💰</div>
+  <div class="spinner"></div>
+  <div style="font-size:18px;font-weight:700;color:#10b981;font-family:system-ui">Finance Tracker</div>
+  <div style="font-size:13px;color:#64748b;margin-top:8px">Loading...</div>
+</div>
+
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useMemo,useRef,useCallback}=React;
@@ -31,7 +70,6 @@ const {PieChart,Pie,Cell,Tooltip,ResponsiveContainer}=Recharts;
 
 // ── Init Telegram Web App ──
 const tg = window.Telegram?.WebApp;
-if(tg){tg.ready();tg.expand();}
 
 // ── UTILS ──
 const uid=()=>`${Date.now()}_${Math.random().toString(36).substr(2,5)}`;
@@ -180,7 +218,7 @@ function Modal({open,onClose,title,children,t}){
       onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
       <div className="slide-up" style={{background:t.bgCard,borderRadius:"20px 20px 0 0",maxHeight:"90vh",display:"flex",flexDirection:"column",boxShadow:t.shadow}}>
         <div style={{padding:"20px 20px 0",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
-          <span style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:600,color:t.text}}>{title}</span>
+          <span style={{fontFamily:"system-ui,sans-serif",fontSize:18,fontWeight:600,color:t.text}}>{title}</span>
           <button onClick={onClose} style={{background:t.bgInput,border:"none",borderRadius:8,width:32,height:32,cursor:"pointer",color:t.textMuted,fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
         </div>
         <div style={{overflow:"auto",padding:"16px 20px 40px",flex:1}}>{children}</div>
@@ -230,13 +268,13 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
     <Modal open={open} onClose={onClose} title="Add Transaction" t={t}>
       <div style={{display:"flex",gap:8,marginBottom:16}}>
         {modes.map(({k,l,c})=>(
-          <button key={k} onClick={()=>setMode(k)} style={{flex:1,padding:"9px 0",borderRadius:10,border:`1.5px solid ${k===mode?c:t.border}`,background:k===mode?c+"22":"transparent",color:k===mode?c:t.textMuted,fontWeight:500,fontSize:13,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>{l}</button>
+          <button key={k} onClick={()=>setMode(k)} style={{flex:1,padding:"9px 0",borderRadius:10,border:`1.5px solid ${k===mode?c:t.border}`,background:k===mode?c+"22":"transparent",color:k===mode?c:t.textMuted,fontWeight:500,fontSize:13,cursor:"pointer",fontFamily:"system-ui,sans-serif"}}>{l}</button>
         ))}
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
         <div>
           <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>Amount</div>
-          <input value={amount} onChange={e=>setAmount(e.target.value)} placeholder="0.00" type="number" style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"13px 14px",fontSize:28,fontFamily:"'DM Mono',monospace",fontWeight:500}}/>
+          <input value={amount} onChange={e=>setAmount(e.target.value)} placeholder="0.00" type="number" style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"13px 14px",fontSize:28,fontFamily:"monospace",fontWeight:500}}/>
         </div>
         <div>
           <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>From Account</div>
@@ -282,7 +320,7 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
           {loading?(
             <div style={{textAlign:"center",padding:"14px 0",color:t.accent,fontSize:14}}>🤖 AI coach is analyzing your purchase...</div>
           ):(
-            <button onClick={handleSave} style={{width:"100%",background:"#10b981",color:"#fff",border:"none",borderRadius:12,padding:"14px",fontSize:16,fontWeight:600,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>Save Transaction</button>
+            <button onClick={handleSave} style={{width:"100%",background:"#10b981",color:"#fff",border:"none",borderRadius:12,padding:"14px",fontSize:16,fontWeight:600,cursor:"pointer",fontFamily:"system-ui,sans-serif"}}>Save Transaction</button>
           )}
         </div>
       </div>
@@ -311,7 +349,7 @@ function TxnDetail({txn,open,onClose,accounts,categories,onDelete,t}){
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
         <div style={{textAlign:"center",padding:"16px 0"}}>
           <div style={{fontSize:42,marginBottom:8}}>{cat?.icon||"💸"}</div>
-          <div style={{fontSize:32,fontWeight:700,color,fontFamily:"'Syne',sans-serif"}}>{sign}{fmtFull(txn.amount,txn.currency)}</div>
+          <div style={{fontSize:32,fontWeight:700,color,fontFamily:"system-ui,sans-serif"}}>{sign}{fmtFull(txn.amount,txn.currency)}</div>
           <div style={{fontSize:15,color:t.textMuted,marginTop:4}}>{cat?.name}{sub?` · ${sub.name}`:""}</div>
         </div>
         {rows.map(({l,v})=>(
@@ -326,7 +364,7 @@ function TxnDetail({txn,open,onClose,accounts,categories,onDelete,t}){
             <div style={{fontSize:14,color:t.textMuted,fontStyle:"italic",lineHeight:1.6}}>{txn.aiComment}</div>
           </div>
         )}
-        <button onClick={()=>{haptic("heavy");onDelete(txn.id);onClose();}} style={{width:"100%",background:"transparent",color:"#ef4444",border:"1.5px solid #ef4444",borderRadius:12,padding:"13px",fontSize:15,fontWeight:500,cursor:"pointer",fontFamily:"'DM Sans',sans-serif",marginTop:4}}>Delete Transaction</button>
+        <button onClick={()=>{haptic("heavy");onDelete(txn.id);onClose();}} style={{width:"100%",background:"transparent",color:"#ef4444",border:"1.5px solid #ef4444",borderRadius:12,padding:"13px",fontSize:15,fontWeight:500,cursor:"pointer",fontFamily:"system-ui,sans-serif",marginTop:4}}>Delete Transaction</button>
       </div>
     </Modal>
   );
@@ -364,18 +402,18 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,settings,onS
               :<div style={{width:38,height:38,borderRadius:"50%",background:"#10b981",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:18,color:"#fff"}}>{(settings.displayName||"U")[0]}</div>}
             <div>
               <div style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>Welcome back</div>
-              <div style={{fontSize:16,fontWeight:600,color:"#fff",fontFamily:"'Syne',sans-serif"}}>{settings.displayName}</div>
+              <div style={{fontSize:16,fontWeight:600,color:"#fff",fontFamily:"system-ui,sans-serif"}}>{settings.displayName}</div>
             </div>
           </div>
           <div style={{display:"flex",gap:8}}>
-            <button onClick={cycleCur} style={{background:"rgba(255,255,255,0.12)",border:"none",borderRadius:8,padding:"6px 12px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'DM Mono',monospace"}}>{selectedCurrency}</button>
+            <button onClick={cycleCur} style={{background:"rgba(255,255,255,0.12)",border:"none",borderRadius:8,padding:"6px 12px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"monospace"}}>{selectedCurrency}</button>
             <button onClick={()=>onSettingsChange({...settings,darkMode:!settings.darkMode})} style={{background:"rgba(255,255,255,0.12)",border:"none",borderRadius:8,width:34,height:34,color:"#fff",fontSize:16,cursor:"pointer"}}>{settings.darkMode?"☀️":"🌙"}</button>
           </div>
         </div>
         <div style={{textAlign:"center",marginBottom:20}}>
           <div style={{fontSize:13,color:"rgba(255,255,255,0.5)",marginBottom:8}}>Total Balance</div>
           <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
-            <div style={{fontSize:38,fontWeight:700,color:"#fff",fontFamily:"'Syne',sans-serif",letterSpacing:"-1px"}}>
+            <div style={{fontSize:38,fontWeight:700,color:"#fff",fontFamily:"system-ui,sans-serif",letterSpacing:"-1px"}}>
               {balanceHidden?"••••••":fmtAmt(total,selectedCurrency)}
             </div>
             <button onClick={()=>onSettingsChange({...settings,balanceHidden:!balanceHidden})} style={{background:"rgba(255,255,255,0.12)",border:"none",borderRadius:8,width:32,height:32,color:"rgba(255,255,255,0.7)",fontSize:15,cursor:"pointer"}}>
@@ -396,7 +434,7 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,settings,onS
         </div>
         <div style={{display:"flex",gap:8}}>
           {[{l:"＋ Income",m:"income",c:"#10b981"},{l:"－ Expense",m:"expense",c:"#ef4444"},{l:"⇄ Transfer",m:"transfer",c:"#3b82f6"}].map(({l,m,c})=>(
-            <button key={m} onClick={()=>{haptic();onAddTxn(m);}} style={{flex:1,padding:"10px 0",borderRadius:12,border:`1.5px solid ${c}`,background:`${c}22`,color:c,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>{l}</button>
+            <button key={m} onClick={()=>{haptic();onAddTxn(m);}} style={{flex:1,padding:"10px 0",borderRadius:12,border:`1.5px solid ${c}`,background:`${c}22`,color:c,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"system-ui,sans-serif"}}>{l}</button>
           ))}
         </div>
       </div>
@@ -411,7 +449,7 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,settings,onS
 
         {/* Accounts */}
         <div style={{marginBottom:16}}>
-          <div style={{fontSize:16,fontWeight:600,color:t.text,fontFamily:"'Syne',sans-serif",marginBottom:10}}>My Accounts</div>
+          <div style={{fontSize:16,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif",marginBottom:10}}>My Accounts</div>
           <div style={{display:"flex",gap:10,overflowX:"auto",paddingBottom:6}}>
             {accounts.map(acc=>(
               <div key={acc.id} style={{minWidth:148,background:t.bgCard,borderRadius:14,padding:"14px",border:`1px solid ${t.border}`,flexShrink:0}}>
@@ -420,7 +458,7 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,settings,onS
                   <span style={{fontSize:10,color:t.textMuted,background:t.bgInput,borderRadius:6,padding:"2px 7px",textTransform:"uppercase",letterSpacing:"0.5px"}}>{acc.type}</span>
                 </div>
                 <div style={{fontSize:12,color:t.textMuted,marginBottom:3}}>{acc.name}</div>
-                <div style={{fontSize:17,fontWeight:700,color:t.text,fontFamily:"'DM Mono',monospace"}}>{balanceHidden?"••••":fmtAmt(acc.balance,acc.currency)}</div>
+                <div style={{fontSize:17,fontWeight:700,color:t.text,fontFamily:"monospace"}}>{balanceHidden?"••••":fmtAmt(acc.balance,acc.currency)}</div>
               </div>
             ))}
           </div>
@@ -429,7 +467,7 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,settings,onS
         {/* Upcoming Fixed */}
         {upcomingFixed.length>0&&(
           <div style={{marginBottom:16}}>
-            <div style={{fontSize:16,fontWeight:600,color:t.text,fontFamily:"'Syne',sans-serif",marginBottom:10}}>📅 Upcoming Fixed</div>
+            <div style={{fontSize:16,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif",marginBottom:10}}>📅 Upcoming Fixed</div>
             <div style={{background:t.bgCard,borderRadius:14,border:`1px solid ${t.border}`,overflow:"hidden"}}>
               {upcomingFixed.map((fe,i)=>(
                 <div key={fe.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px",borderBottom:i<upcomingFixed.length-1?`1px solid ${t.border}`:"none"}}>
@@ -437,12 +475,12 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,settings,onS
                     <div style={{fontSize:14,color:t.text,fontWeight:500}}>{fe.name}</div>
                     <div style={{fontSize:11,color:t.textMuted}}>Due: {fe.dayOfMonth}th of month</div>
                   </div>
-                  <div style={{fontSize:14,fontWeight:700,color:"#ef4444",fontFamily:"'DM Mono',monospace"}}>-{fmtAmt(fe.amount,fe.currency)}</div>
+                  <div style={{fontSize:14,fontWeight:700,color:"#ef4444",fontFamily:"monospace"}}>-{fmtAmt(fe.amount,fe.currency)}</div>
                 </div>
               ))}
               <div style={{padding:"12px 14px",background:t.bgCard2,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <span style={{fontSize:13,color:t.textMuted}}>Remaining budget</span>
-                <span style={{fontSize:15,fontWeight:700,color:remaining>=0?"#10b981":"#ef4444",fontFamily:"'DM Mono',monospace"}}>{fmtAmt(fromKZT(remaining,selectedCurrency,exchangeRates),selectedCurrency)}</span>
+                <span style={{fontSize:15,fontWeight:700,color:remaining>=0?"#10b981":"#ef4444",fontFamily:"monospace"}}>{fmtAmt(fromKZT(remaining,selectedCurrency,exchangeRates),selectedCurrency)}</span>
               </div>
             </div>
           </div>
@@ -450,7 +488,7 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,settings,onS
 
         {/* Recent Transactions */}
         <div style={{marginBottom:8}}>
-          <div style={{fontSize:16,fontWeight:600,color:t.text,fontFamily:"'Syne',sans-serif",marginBottom:10}}>Recent Transactions</div>
+          <div style={{fontSize:16,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif",marginBottom:10}}>Recent Transactions</div>
           {recentTxns.length===0&&(
             <div style={{textAlign:"center",padding:"32px",color:t.textMuted,fontSize:14}}>
               <div style={{fontSize:32,marginBottom:8}}>💰</div>
@@ -473,7 +511,7 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,settings,onS
                         <div style={{fontSize:11,color:t.textMuted}}>{acc?.name} · {new Date(txn.date).toLocaleDateString("en-US",{month:"short",day:"numeric"})}</div>
                       </div>
                     </div>
-                    <div style={{fontSize:16,fontWeight:700,color,fontFamily:"'DM Mono',monospace"}}>{sign}{fmtAmt(txn.amount,txn.currency)}</div>
+                    <div style={{fontSize:16,fontWeight:700,color,fontFamily:"monospace"}}>{sign}{fmtAmt(txn.amount,txn.currency)}</div>
                   </div>
                   {txn.aiComment&&(
                     <div style={{marginTop:8,padding:"8px 10px",background:t.bgCard2,borderRadius:8,borderLeft:"3px solid #10b981"}}>
@@ -526,23 +564,23 @@ function AnalyticsScreen({transactions,categories,settings,t}){
 
   return(
     <div style={{height:"100%",overflow:"auto",padding:"16px 16px 16px"}}>
-      <div style={{fontFamily:"'Syne',sans-serif",fontSize:22,fontWeight:700,color:t.text,marginBottom:16}}>Analytics</div>
+      <div style={{fontFamily:"system-ui,sans-serif",fontSize:22,fontWeight:700,color:t.text,marginBottom:16}}>Analytics</div>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,background:t.bgCard,borderRadius:12,padding:"10px 16px",border:`1px solid ${t.border}`}}>
         <button onClick={prevMonth} style={{background:"none",border:"none",color:t.accent,fontSize:22,cursor:"pointer",padding:"0 6px"}}>‹</button>
-        <span style={{fontSize:16,fontWeight:600,color:t.text,fontFamily:"'Syne',sans-serif"}}>{MONTHS_FULL[selMonth]} {selYear}</span>
+        <span style={{fontSize:16,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif"}}>{MONTHS_FULL[selMonth]} {selYear}</span>
         <button onClick={nextMonth} style={{background:"none",border:"none",color:t.accent,fontSize:22,cursor:"pointer",padding:"0 6px"}}>›</button>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:20}}>
         {[{l:"Income",v:totalInc,c:"#10b981"},{l:"Expenses",v:totalExp,c:"#ef4444"},{l:"Saved",v:totalInc-totalExp,c:"#3b82f6"}].map(({l,v,c})=>(
           <div key={l} style={{background:t.bgCard,borderRadius:12,padding:"12px 10px",border:`1px solid ${t.border}`,textAlign:"center"}}>
             <div style={{fontSize:11,color:t.textMuted,marginBottom:4}}>{l}</div>
-            <div style={{fontSize:12,fontWeight:700,color:c,fontFamily:"'DM Mono',monospace"}}>{fmtAmt(fromKZT(v,selectedCurrency,exchangeRates),selectedCurrency)}</div>
+            <div style={{fontSize:12,fontWeight:700,color:c,fontFamily:"monospace"}}>{fmtAmt(fromKZT(v,selectedCurrency,exchangeRates),selectedCurrency)}</div>
           </div>
         ))}
       </div>
       {pieData.length>0?(
         <div style={{background:t.bgCard,borderRadius:16,padding:"16px",border:`1px solid ${t.border}`,marginBottom:20}}>
-          <div style={{fontSize:15,fontWeight:600,color:t.text,fontFamily:"'Syne',sans-serif",marginBottom:12}}>Spending by Category</div>
+          <div style={{fontSize:15,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif",marginBottom:12}}>Spending by Category</div>
           <ResponsiveContainer width="100%" height={200}>
             <PieChart>
               <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={52} outerRadius={82} paddingAngle={3}>
@@ -561,7 +599,7 @@ function AnalyticsScreen({transactions,categories,settings,t}){
                     <div style={{width:10,height:10,borderRadius:2,background:d.color,flexShrink:0}}/>
                     <span style={{fontSize:13,color:t.text,flex:1}}>{d.icon} {d.name}</span>
                     <span style={{fontSize:12,color:t.textMuted}}>{pct}%</span>
-                    <span style={{fontSize:13,fontWeight:600,color:t.text,fontFamily:"'DM Mono',monospace"}}>{fmtAmt(fromKZT(d.value,selectedCurrency,exchangeRates),selectedCurrency)}</span>
+                    <span style={{fontSize:13,fontWeight:600,color:t.text,fontFamily:"monospace"}}>{fmtAmt(fromKZT(d.value,selectedCurrency,exchangeRates),selectedCurrency)}</span>
                   </div>
                   <div style={{height:3,background:t.bgInput,borderRadius:2}}><div style={{height:"100%",width:`${bar}%`,background:d.color,borderRadius:2}}/></div>
                 </div>
@@ -576,7 +614,7 @@ function AnalyticsScreen({transactions,categories,settings,t}){
         </div>
       )}
       <div style={{background:t.bgCard,borderRadius:16,padding:"16px",border:`1px solid ${t.border}`}}>
-        <div style={{fontSize:15,fontWeight:600,color:t.text,fontFamily:"'Syne',sans-serif",marginBottom:12}}>Daily Spending — {MONTHS_SHORT[selMonth]}</div>
+        <div style={{fontSize:15,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif",marginBottom:12}}>Daily Spending — {MONTHS_SHORT[selMonth]}</div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
           {["S","M","T","W","T","F","S"].map((d,i)=><div key={i} style={{textAlign:"center",fontSize:10,color:t.textMuted,paddingBottom:4,fontWeight:600}}>{d}</div>)}
           {Array.from({length:new Date(selYear,selMonth,1).getDay()}).map((_,i)=><div key={"e"+i}/>)}
@@ -619,10 +657,10 @@ function HistoryScreen({transactions,accounts,categories,settings,onTxnClick,t})
 
   return(
     <div style={{height:"100%",overflow:"auto",padding:"16px 16px 16px"}}>
-      <div style={{fontFamily:"'Syne',sans-serif",fontSize:22,fontWeight:700,color:t.text,marginBottom:16}}>History</div>
+      <div style={{fontFamily:"system-ui,sans-serif",fontSize:22,fontWeight:700,color:t.text,marginBottom:16}}>History</div>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,background:t.bgCard,borderRadius:12,padding:"10px 16px",border:`1px solid ${t.border}`}}>
         <button onClick={prevMonth} style={{background:"none",border:"none",color:t.accent,fontSize:22,cursor:"pointer",padding:"0 6px"}}>‹</button>
-        <span style={{fontSize:16,fontWeight:600,color:t.text,fontFamily:"'Syne',sans-serif"}}>{MONTHS_FULL[selMonth]} {selYear}</span>
+        <span style={{fontSize:16,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif"}}>{MONTHS_FULL[selMonth]} {selYear}</span>
         <button onClick={nextMonth} style={{background:"none",border:"none",color:t.accent,fontSize:22,cursor:"pointer",padding:"0 6px"}}>›</button>
       </div>
       {grouped.length===0&&(
@@ -636,7 +674,7 @@ function HistoryScreen({transactions,accounts,categories,settings,onTxnClick,t})
           <div key={gi}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
               <span style={{fontSize:13,fontWeight:600,color:t.textMuted}}>{g.label}</span>
-              <span style={{fontSize:13,fontWeight:600,color:g.total>=0?"#10b981":"#ef4444",fontFamily:"'DM Mono',monospace"}}>{g.total>=0?"+":""}{fmtAmt(fromKZT(g.total,selectedCurrency,exchangeRates),selectedCurrency)}</span>
+              <span style={{fontSize:13,fontWeight:600,color:g.total>=0?"#10b981":"#ef4444",fontFamily:"monospace"}}>{g.total>=0?"+":""}{fmtAmt(fromKZT(g.total,selectedCurrency,exchangeRates),selectedCurrency)}</span>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
               {g.txns.map(txn=>{
@@ -655,7 +693,7 @@ function HistoryScreen({transactions,accounts,categories,settings,onTxnClick,t})
                           <div style={{fontSize:11,color:t.textMuted}}>{acc?.name}{txn.note?` · ${txn.note.slice(0,22)}${txn.note.length>22?"…":""}`:""}</div>
                         </div>
                       </div>
-                      <div style={{fontSize:15,fontWeight:700,color,fontFamily:"'DM Mono',monospace"}}>{sign}{fmtAmt(txn.amount,txn.currency)}</div>
+                      <div style={{fontSize:15,fontWeight:700,color,fontFamily:"monospace"}}>{sign}{fmtAmt(txn.amount,txn.currency)}</div>
                     </div>
                     {txn.aiComment&&<div style={{marginTop:7,fontSize:12,color:t.textMuted,fontStyle:"italic",paddingLeft:44}}>🤖 {txn.aiComment.slice(0,90)}{txn.aiComment.length>90?"…":""}</div>}
                   </div>
@@ -701,7 +739,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
 
   return(
     <div style={{height:"100%",overflow:"auto",padding:"16px 16px 16px"}}>
-      <div style={{fontFamily:"'Syne',sans-serif",fontSize:22,fontWeight:700,color:t.text,marginBottom:16}}>Settings</div>
+      <div style={{fontFamily:"system-ui,sans-serif",fontSize:22,fontWeight:700,color:t.text,marginBottom:16}}>Settings</div>
 
       {/* Profile */}
       <div style={{background:t.bgCard,borderRadius:16,padding:"16px",border:`1px solid ${t.border}`,marginBottom:12,display:"flex",alignItems:"center",gap:14}}>
@@ -714,7 +752,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
         </div>
         <div style={{flex:1}}>
           <div style={{fontSize:12,color:t.textMuted,marginBottom:5}}>Display Name</div>
-          <input value={settings.displayName||""} onChange={e=>onSettingsChange({...settings,displayName:e.target.value})} style={{background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"9px 12px",fontSize:15,width:"100%",fontFamily:"'DM Sans',sans-serif"}}/>
+          <input value={settings.displayName||""} onChange={e=>onSettingsChange({...settings,displayName:e.target.value})} style={{background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"9px 12px",fontSize:15,width:"100%",fontFamily:"system-ui,sans-serif"}}/>
         </div>
       </div>
 
@@ -735,7 +773,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
             <div key={a.id} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 0",borderBottom:`1px solid ${t.border}`}}>
               <span style={{fontSize:18}}>{a.icon}</span>
               {editAccId===a.id
-                ?<input value={editAccName} onChange={e=>setEditAccName(e.target.value)} style={{flex:1,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:7,padding:"6px 10px",fontSize:14,fontFamily:"'DM Sans',sans-serif"}}/>
+                ?<input value={editAccName} onChange={e=>setEditAccName(e.target.value)} style={{flex:1,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:7,padding:"6px 10px",fontSize:14,fontFamily:"system-ui,sans-serif"}}/>
                 :<span style={{flex:1,fontSize:14,color:t.text}}>{a.name} <span style={{color:t.textMuted}}>({a.currency})</span></span>}
               {editAccId===a.id?(
                 <>
@@ -751,7 +789,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
             </div>
           ))}
           <div style={{marginTop:10,display:"flex",gap:8}}>
-            <input value={newAccName} onChange={e=>setNewAccName(e.target.value)} placeholder="Name" style={{flex:1,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"8px 10px",fontSize:14,fontFamily:"'DM Sans',sans-serif"}}/>
+            <input value={newAccName} onChange={e=>setNewAccName(e.target.value)} placeholder="Name" style={{flex:1,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"8px 10px",fontSize:14,fontFamily:"system-ui,sans-serif"}}/>
             <select value={newAccType} onChange={e=>setNewAccType(e.target.value)} style={{background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"8px",fontSize:13}}>
               <option value="bank">Bank</option><option value="crypto">Crypto</option>
             </select>
@@ -772,7 +810,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
           ))}
           <div style={{marginTop:10,display:"flex",gap:8}}>
             <input value={newCatIcon} onChange={e=>setNewCatIcon(e.target.value)} style={{width:46,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"8px",fontSize:20,textAlign:"center"}}/>
-            <input value={newCatName} onChange={e=>setNewCatName(e.target.value)} placeholder="Category name" style={{flex:1,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"8px 10px",fontSize:14,fontFamily:"'DM Sans',sans-serif"}}/>
+            <input value={newCatName} onChange={e=>setNewCatName(e.target.value)} placeholder="Category name" style={{flex:1,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"8px 10px",fontSize:14,fontFamily:"system-ui,sans-serif"}}/>
             <button onClick={()=>{if(!newCatName.trim())return;onCategoriesChange([...categories,{id:uid(),name:newCatName.trim(),icon:newCatIcon||"📌",color:"#10b981",subcategories:[]}]);setNewCatName("");setNewCatIcon("📌");}} style={{background:"#10b981",border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",cursor:"pointer",fontSize:16,fontWeight:700}}>+</button>
           </div>
         </div>
@@ -791,7 +829,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
             </div>
           ))}
           <div style={{marginTop:10,display:"flex",flexDirection:"column",gap:8}}>
-            <input value={newFeName} onChange={e=>setNewFeName(e.target.value)} placeholder="Name (e.g. Netflix)" style={{background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"9px 12px",fontSize:14,fontFamily:"'DM Sans',sans-serif"}}/>
+            <input value={newFeName} onChange={e=>setNewFeName(e.target.value)} placeholder="Name (e.g. Netflix)" style={{background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"9px 12px",fontSize:14,fontFamily:"system-ui,sans-serif"}}/>
             <div style={{display:"flex",gap:8}}>
               <input value={newFeAmt} onChange={e=>setNewFeAmt(e.target.value)} placeholder="Amount ₸" type="number" style={{flex:1,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"9px 12px",fontSize:14}}/>
               <input value={newFeDay} onChange={e=>setNewFeDay(e.target.value)} placeholder="Day" type="number" min="1" max="31" style={{width:64,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"9px 10px",fontSize:14,textAlign:"center"}}/>
@@ -817,7 +855,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
           ))}
           <div>
             <div style={{fontSize:12,color:t.textMuted,marginBottom:5}}>Custom Prompt Prefix</div>
-            <input value={settings.aiCustomPrompt||""} onChange={e=>onSettingsChange({...settings,aiCustomPrompt:e.target.value})} placeholder="e.g. Always compare to cups of coffee." style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"10px 12px",fontSize:14,fontFamily:"'DM Sans',sans-serif"}}/>
+            <input value={settings.aiCustomPrompt||""} onChange={e=>onSettingsChange({...settings,aiCustomPrompt:e.target.value})} placeholder="e.g. Always compare to cups of coffee." style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"10px 12px",fontSize:14,fontFamily:"system-ui,sans-serif"}}/>
           </div>
         </div>
       )}
@@ -827,7 +865,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
         <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:8}}>
           {["USD","EUR","USDT"].map(c=>(
             <div key={c} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:`1px solid ${t.border}`}}>
-              <span style={{fontSize:14,color:t.text,width:52,fontWeight:700,fontFamily:"'DM Mono',monospace"}}>{c}</span>
+              <span style={{fontSize:14,color:t.text,width:52,fontWeight:700,fontFamily:"monospace"}}>{c}</span>
               <span style={{fontSize:13,color:t.textMuted,flex:1}}>1 {c} =</span>
               <input value={settings.exchangeRates[c]||0} onChange={e=>onSettingsChange({...settings,exchangeRates:{...settings.exchangeRates,[c]:+e.target.value}})} type="number" style={{width:80,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"6px 10px",fontSize:14,textAlign:"right"}}/>
               <span style={{fontSize:13,color:t.textMuted}}>₸</span>
@@ -874,6 +912,9 @@ function App(){
       setFixedRaw(LS.get("ft_fixed",DEF_FIXED));
       setSettingsRaw(LS.get("ft_settings",DEF_SETTINGS));
     }
+    // Hide splash screen
+    const splash=document.getElementById("splash");
+    if(splash){splash.classList.add("hidden");setTimeout(()=>splash.remove(),300);}
     setLoaded(true);
   },[]);
 
@@ -914,7 +955,7 @@ function App(){
     return(
       <div style={{height:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"#0a0f1e"}}>
         <div style={{fontSize:48,marginBottom:16}}>💰</div>
-        <div style={{fontFamily:"'Syne',sans-serif",fontSize:22,color:"#10b981",fontWeight:700}}>Finance Tracker</div>
+        <div style={{fontFamily:"system-ui,sans-serif",fontSize:22,color:"#10b981",fontWeight:700}}>Finance Tracker</div>
         <div style={{fontSize:14,color:"#64748b",marginTop:8}}>Loading your data...</div>
       </div>
     );
@@ -947,7 +988,7 @@ function App(){
               ):(
                 <>
                   <div style={{fontSize:22,filter:active?"none":"grayscale(80%)",opacity:active?1:0.55,transition:"opacity .15s"}}>{icon}</div>
-                  <div style={{fontSize:10,fontWeight:active?600:400,color:active?t.accent:t.textMuted,fontFamily:"'DM Sans',sans-serif",transition:"color .15s"}}>{label}</div>
+                  <div style={{fontSize:10,fontWeight:active?600:400,color:active?t.accent:t.textMuted,fontFamily:"system-ui,sans-serif",transition:"color .15s"}}>{label}</div>
                 </>
               )}
             </button>
