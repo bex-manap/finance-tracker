@@ -132,6 +132,7 @@ const DEF_SETTINGS={
   selectedCurrency:"KZT",
   balanceHidden:false,
   aiEnabled:true,
+  aiPet:"dog",
   aiTone:"humorous",
   aiLanguage:"English",
   aiCustomPrompt:"",
@@ -149,13 +150,98 @@ const mkSampleTxns=()=>{
 };
 
 // ── STORAGE ──
+// Telegram CloudStorage syncs data across devices for the same Telegram user.
+// Falls back to localStorage if not running inside Telegram.
+const CS = window.Telegram?.WebApp?.CloudStorage;
+const CS_AVAILABLE = !!(CS && typeof CS.setItem === "function");
+
 const LS={
   get:(k,def)=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):def;}catch{return def;}},
-  set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch{}}
+  set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch{}},
+  remove:(k)=>{try{localStorage.removeItem(k);}catch{}}
+};
+
+// Promise wrappers for Telegram CloudStorage callback API
+const csGetItem=(key)=>new Promise((resolve)=>{
+  try{CS.getItem(key,(err,val)=>resolve(err?null:val));}catch{resolve(null);}
+});
+const csGetItems=(keys)=>new Promise((resolve)=>{
+  try{CS.getItems(keys,(err,vals)=>resolve(err?{}:(vals||{})));}catch{resolve({});}
+});
+const csSetItem=(key,val)=>new Promise((resolve)=>{
+  try{CS.setItem(key,val,(err)=>resolve(!err));}catch{resolve(false);}
+});
+const csRemoveItem=(key)=>new Promise((resolve)=>{
+  try{CS.removeItem(key,(err)=>resolve(!err));}catch{resolve(false);}
+});
+const csGetKeys=()=>new Promise((resolve)=>{
+  try{CS.getKeys((err,keys)=>resolve(err?[]:(keys||[])));}catch{resolve([]);}
+});
+
+// High-level storage: writes to both CloudStorage (if available) and localStorage.
+// Reads prefer CloudStorage, falling back to localStorage.
+const STORE={
+  async get(key,def){
+    if(CS_AVAILABLE){
+      const val=await csGetItem(key);
+      if(val){try{return JSON.parse(val);}catch{}}
+    }
+    return LS.get(key,def);
+  },
+  async set(key,value){
+    LS.set(key,value);
+    if(CS_AVAILABLE){
+      const str=JSON.stringify(value);
+      // CloudStorage has a 4096 char limit per value. Small items fit fine.
+      if(str.length<=4096)await csSetItem(key,str);
+    }
+  },
+  async remove(key){
+    LS.remove(key);
+    if(CS_AVAILABLE)await csRemoveItem(key);
+  },
+  // Transactions are stored individually as ft_txn_{id} because the array
+  // can grow beyond the 4096 char per-value limit.
+  async getAllTransactions(){
+    if(CS_AVAILABLE){
+      const keys=await csGetKeys();
+      const txnKeys=keys.filter(k=>k.startsWith("ft_txn_"));
+      if(txnKeys.length>0){
+        const items=await csGetItems(txnKeys);
+        return Object.values(items).map(v=>{try{return JSON.parse(v);}catch{return null;}}).filter(Boolean);
+      }
+    }
+    return LS.get("ft_transactions",[]);
+  },
+  async saveTransaction(txn){
+    const allLocal=LS.get("ft_transactions",[]);
+    const filtered=allLocal.filter(t=>t.id!==txn.id);
+    LS.set("ft_transactions",[...filtered,txn]);
+    if(CS_AVAILABLE)await csSetItem(`ft_txn_${txn.id}`,JSON.stringify(txn));
+  },
+  async deleteTransaction(id){
+    const allLocal=LS.get("ft_transactions",[]);
+    LS.set("ft_transactions",allLocal.filter(t=>t.id!==id));
+    if(CS_AVAILABLE)await csRemoveItem(`ft_txn_${id}`);
+  }
 };
 
 // ── AI COACH ──
-const getAIComment=async(amount,currency,category,subcategory,note,settings)=>{
+// Pet personality profiles shape the AI's voice and behavior.
+const PETS={
+  dog:{
+    emoji:"🐶",
+    name:"dog",
+    persona:"You are a loyal, enthusiastic dog giving your human financial advice. Be friendly, supportive, and a bit playful — wag metaphorically, use occasional dog expressions like 'woof!' or reference fetching, tails, and treats. Celebrate wins like you just got a treat. Gently call out bad spending like a concerned pup but never scold harshly."
+  },
+  cat:{
+    emoji:"🐱",
+    name:"cat",
+    persona:"You are a judgmental, sassy cat giving your human financial advice. Be aloof, sarcastic, and slightly dismissive — roll your eyes metaphorically, use occasional cat expressions like 'purr', 'hiss', reference knocking things off tables, naps, or tuna. Mock bad spending but secretly care. Be the wise, slightly annoyed cat they need."
+  }
+};
+
+const getAIComment=async(type,amount,currency,category,subcategory,note,settings)=>{
   if(!settings.aiEnabled)return null;
   const toneMap={
     humorous:"direct and slightly humorous, use relatable comparisons and light wit",
@@ -165,6 +251,16 @@ const getAIComment=async(amount,currency,category,subcategory,note,settings)=>{
   const tone=toneMap[settings.aiTone]||toneMap.humorous;
   const customExtra=settings.aiCustomPrompt?` ${settings.aiCustomPrompt}`:"";
   const lang=settings.aiLanguage||"English";
+  const pet=PETS[settings.aiPet]||PETS.dog;
+
+  const actionDesc=type==="income"
+    ?`just received ${fmtFull(amount,currency)} as income from ${subcategory||category||"unspecified source"}`
+    :`just spent ${fmtFull(amount,currency)} on ${subcategory||category||"something"}`;
+
+  const systemPrompt=`${pet.persona} You live in their budgeting app and comment briefly on their financial actions. Tone style: ${tone}. Use relatable comparisons when relevant (e.g., "that's X coffees" or "X days of groceries").${customExtra} Keep it to 1-2 sentences MAX. Respond in ${lang}. No preamble, no emoji overload (pet emojis are added by the app separately), just the comment directly in character.`;
+
+  const userMsg=`I ${actionDesc}. My note: "${note||"no note"}". Give me your quick take.`;
+
   try{
     const res=await fetch("https://api.anthropic.com/v1/messages",{
       method:"POST",
@@ -178,8 +274,8 @@ const getAIComment=async(amount,currency,category,subcategory,note,settings)=>{
       body:JSON.stringify({
         model:"claude-sonnet-4-20250514",
         max_tokens:120,
-        system:`You are a personal finance coach inside a budgeting app. After a user logs an expense, give a SHORT (1-2 sentence max) comment. Be ${tone}. Use relatable comparisons when relevant (e.g., "that's X coffees" or "X days of groceries").${customExtra} Respond in ${lang}. No preamble, just the comment directly.`,
-        messages:[{role:"user",content:`I just spent ${fmtFull(amount,currency)} on ${subcategory||category}. My note: "${note||"no note"}".`}]
+        system:systemPrompt,
+        messages:[{role:"user",content:userMsg}]
       })
     });
     const d=await res.json();
@@ -250,11 +346,12 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
     haptic();
     const acc=accounts.find(a=>a.id===accountId);
     const txn={id:uid(),type:mode,amount:+amount,currency:acc?.currency||"KZT",accountId,toAccountId:mode==="transfer"?toAccountId:null,categoryId:categoryId||null,subcategoryId:subcategoryId||null,note,date:new Date(date).toISOString(),aiComment:null};
-    if(mode==="expense"&&settings.aiEnabled){
+    // Get AI comment for expenses AND income (not transfers)
+    if((mode==="expense"||mode==="income")&&settings.aiEnabled){
       setLoading(true);
       const cat=categories.find(c=>c.id===categoryId);
       const sub=cat?.subcategories?.find(s=>s.id===subcategoryId);
-      const comment=await getAIComment(+amount,acc?.currency||"KZT",cat?.name||"",sub?.name||"",note,settings);
+      const comment=await getAIComment(mode,+amount,acc?.currency||"KZT",cat?.name||"",sub?.name||"",note,settings);
       txn.aiComment=comment;
       setLoading(false);
     }
@@ -318,7 +415,7 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
         </div>
         <div style={{marginTop:4}}>
           {loading?(
-            <div style={{textAlign:"center",padding:"14px 0",color:t.accent,fontSize:14}}>🤖 AI coach is analyzing your purchase...</div>
+            <div style={{textAlign:"center",padding:"14px 0",color:t.accent,fontSize:14}}>{(PETS[settings.aiPet]||PETS.dog).emoji} Your {(PETS[settings.aiPet]||PETS.dog).name} is thinking...</div>
           ):(
             <button onClick={handleSave} style={{width:"100%",background:"#10b981",color:"#fff",border:"none",borderRadius:12,padding:"14px",fontSize:16,fontWeight:600,cursor:"pointer",fontFamily:"system-ui,sans-serif"}}>Save Transaction</button>
           )}
@@ -329,7 +426,7 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
 }
 
 // ── TRANSACTION DETAIL MODAL ──
-function TxnDetail({txn,open,onClose,accounts,categories,onDelete,t}){
+function TxnDetail({txn,open,onClose,accounts,categories,onDelete,settings,t}){
   if(!txn)return null;
   const acc=accounts.find(a=>a.id===txn.accountId);
   const toAcc=accounts.find(a=>a.id===txn.toAccountId);
@@ -360,7 +457,7 @@ function TxnDetail({txn,open,onClose,accounts,categories,onDelete,t}){
         ))}
         {txn.aiComment&&(
           <div style={{background:t.bgCard2,borderRadius:12,padding:"14px",borderLeft:"3px solid #10b981"}}>
-            <div style={{fontSize:12,color:"#10b981",marginBottom:5,fontWeight:600}}>🤖 AI Coach Says</div>
+            <div style={{fontSize:12,color:"#10b981",marginBottom:5,fontWeight:600}}>{(PETS[settings?.aiPet]||PETS.dog).emoji} Your {(PETS[settings?.aiPet]||PETS.dog).name} says</div>
             <div style={{fontSize:14,color:t.textMuted,fontStyle:"italic",lineHeight:1.6}}>{txn.aiComment}</div>
           </div>
         )}
@@ -515,7 +612,7 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,settings,onS
                   </div>
                   {txn.aiComment&&(
                     <div style={{marginTop:8,padding:"8px 10px",background:t.bgCard2,borderRadius:8,borderLeft:"3px solid #10b981"}}>
-                      <span style={{fontSize:12,color:t.textMuted,fontStyle:"italic"}}>🤖 {txn.aiComment}</span>
+                      <span style={{fontSize:12,color:t.textMuted,fontStyle:"italic"}}>{(PETS[settings.aiPet]||PETS.dog).emoji} {txn.aiComment}</span>
                     </div>
                   )}
                 </div>
@@ -695,7 +792,7 @@ function HistoryScreen({transactions,accounts,categories,settings,onTxnClick,t})
                       </div>
                       <div style={{fontSize:15,fontWeight:700,color,fontFamily:"monospace"}}>{sign}{fmtAmt(txn.amount,txn.currency)}</div>
                     </div>
-                    {txn.aiComment&&<div style={{marginTop:7,fontSize:12,color:t.textMuted,fontStyle:"italic",paddingLeft:44}}>🤖 {txn.aiComment.slice(0,90)}{txn.aiComment.length>90?"…":""}</div>}
+                    {txn.aiComment&&<div style={{marginTop:7,fontSize:12,color:t.textMuted,fontStyle:"italic",paddingLeft:44}}>{(PETS[settings.aiPet]||PETS.dog).emoji} {txn.aiComment.slice(0,90)}{txn.aiComment.length>90?"…":""}</div>}
                   </div>
                 );
               })}
@@ -842,6 +939,21 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
       <Section k="ai" label="AI Coach Settings" icon="🤖"/>
       {sec==="ai"&&(
         <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:8,display:"flex",flexDirection:"column",gap:10}}>
+          <div>
+            <div style={{fontSize:12,color:t.textMuted,marginBottom:8}}>Your AI Companion</div>
+            <div style={{display:"flex",gap:10}}>
+              {[{k:"dog",emoji:"🐶",label:"Dog",desc:"Loyal & supportive"},{k:"cat",emoji:"🐱",label:"Cat",desc:"Sassy & judgmental"}].map(({k,emoji,label,desc})=>{
+                const active=settings.aiPet===k;
+                return(
+                  <div key={k} onClick={()=>onSettingsChange({...settings,aiPet:k})} style={{flex:1,padding:"14px 10px",borderRadius:12,border:`2px solid ${active?"#10b981":t.border}`,background:active?"#10b98122":t.bgInput,cursor:"pointer",textAlign:"center",transition:"all .15s"}}>
+                    <div style={{fontSize:32,marginBottom:4}}>{emoji}</div>
+                    <div style={{fontSize:14,fontWeight:600,color:active?"#10b981":t.text}}>{label}</div>
+                    <div style={{fontSize:11,color:t.textMuted,marginTop:2}}>{desc}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
           {[
             {l:"Tone",k:"aiTone",opts:[{v:"humorous",l:"Humorous & Direct"},{v:"encouraging",l:"Encouraging"},{v:"neutral",l:"Neutral & Professional"}]},
             {l:"Language",k:"aiLanguage",opts:[{v:"English",l:"English"},{v:"Russian",l:"Russian"},{v:"Kazakh",l:"Kazakh"}]},
@@ -857,6 +969,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
             <div style={{fontSize:12,color:t.textMuted,marginBottom:5}}>Custom Prompt Prefix</div>
             <input value={settings.aiCustomPrompt||""} onChange={e=>onSettingsChange({...settings,aiCustomPrompt:e.target.value})} placeholder="e.g. Always compare to cups of coffee." style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"10px 12px",fontSize:14,fontFamily:"system-ui,sans-serif"}}/>
           </div>
+          <div style={{fontSize:11,color:t.textMuted,fontStyle:"italic",padding:"4px 2px"}}>Your {PETS[settings.aiPet]?.name||"pet"} will comment on both expenses and income when you log them.</div>
         </div>
       )}
 
@@ -890,37 +1003,80 @@ function App(){
   const[addMode,setAddMode]=useState("expense");
   const[selTxn,setSelTxn]=useState(null);
 
-  const save=(key,val)=>{LS.set(key,val);};
+  const save=(key,val)=>{STORE.set(key,val).catch(()=>{});};
   const setAccounts=v=>{setAccountsRaw(v);save("ft_accounts",v);};
-  const setTransactions=v=>{setTransactionsRaw(v);save("ft_transactions",v);};
+  const setTransactions=v=>{setTransactionsRaw(v);LS.set("ft_transactions",v);}; // full array only to localStorage; CS updates happen per-txn
   const setCategories=v=>{setCategoriesRaw(v);save("ft_categories",v);};
   const setFixed=v=>{setFixedRaw(v);save("ft_fixed",v);};
   const setSettings=v=>{setSettingsRaw(v);save("ft_settings",v);};
 
   useEffect(()=>{
-    const init=LS.get("ft_init",false);
-    if(!init){
-      LS.set("ft_accounts",DEF_ACCOUNTS);LS.set("ft_categories",DEF_CATS);
-      const sample=mkSampleTxns();LS.set("ft_transactions",sample);
-      LS.set("ft_fixed",DEF_FIXED);LS.set("ft_settings",DEF_SETTINGS);LS.set("ft_init",true);
-      setAccountsRaw(DEF_ACCOUNTS);setCategoriesRaw(DEF_CATS);
-      setTransactionsRaw(sample);setFixedRaw(DEF_FIXED);setSettingsRaw(DEF_SETTINGS);
-    } else {
-      setAccountsRaw(LS.get("ft_accounts",DEF_ACCOUNTS));
-      setCategoriesRaw(LS.get("ft_categories",DEF_CATS));
-      setTransactionsRaw(LS.get("ft_transactions",[]));
-      setFixedRaw(LS.get("ft_fixed",DEF_FIXED));
-      setSettingsRaw(LS.get("ft_settings",DEF_SETTINGS));
-    }
-    // Hide splash screen
-    const splash=document.getElementById("splash");
-    if(splash){splash.classList.add("hidden");setTimeout(()=>splash.remove(),300);}
-    setLoaded(true);
+    let cancelled=false;
+    (async()=>{
+      // Try to load from CloudStorage first; falls back to localStorage if CS unavailable.
+      let accs=await STORE.get("ft_accounts",null);
+      let cats=await STORE.get("ft_categories",null);
+      let sets=await STORE.get("ft_settings",null);
+      let fxd=await STORE.get("ft_fixed",null);
+      let txns=await STORE.getAllTransactions();
+
+      const isFirstRun=!accs&&!cats&&!sets;
+
+      if(isFirstRun){
+        // Brand new user — seed with defaults and sample data
+        accs=DEF_ACCOUNTS;
+        cats=DEF_CATS;
+        sets=DEF_SETTINGS;
+        fxd=DEF_FIXED;
+        txns=mkSampleTxns();
+        // Persist seed data (fire and forget)
+        STORE.set("ft_accounts",accs);
+        STORE.set("ft_categories",cats);
+        STORE.set("ft_settings",sets);
+        STORE.set("ft_fixed",fxd);
+        for(const t of txns)STORE.saveTransaction(t);
+        LS.set("ft_init",true);
+      } else {
+        // Returning user — backfill any missing pieces with defaults
+        accs=accs||LS.get("ft_accounts",DEF_ACCOUNTS);
+        cats=cats||LS.get("ft_categories",DEF_CATS);
+        sets=sets||LS.get("ft_settings",DEF_SETTINGS);
+        fxd=fxd||LS.get("ft_fixed",DEF_FIXED);
+        if(!txns||txns.length===0)txns=LS.get("ft_transactions",[]);
+        // Merge with default settings so new fields (like aiPet) always have a value
+        sets={...DEF_SETTINGS,...sets};
+        // One-time migration: if CloudStorage is available but hasn't been populated yet,
+        // push everything from localStorage up to the cloud.
+        if(CS_AVAILABLE&&!LS.get("ft_cs_migrated",false)){
+          STORE.set("ft_accounts",accs);
+          STORE.set("ft_categories",cats);
+          STORE.set("ft_settings",sets);
+          STORE.set("ft_fixed",fxd);
+          for(const t of txns)STORE.saveTransaction(t);
+          LS.set("ft_cs_migrated",true);
+        }
+      }
+
+      if(cancelled)return;
+      setAccountsRaw(accs);
+      setCategoriesRaw(cats);
+      setSettingsRaw(sets);
+      setFixedRaw(fxd);
+      setTransactionsRaw(txns);
+
+      // Hide splash screen
+      const splash=document.getElementById("splash");
+      if(splash){splash.classList.add("hidden");setTimeout(()=>splash.remove(),300);}
+      setLoaded(true);
+    })();
+    return()=>{cancelled=true;};
   },[]);
 
   const handleSaveTxn=useCallback((txn)=>{
     const newTxns=[...transactions,txn];
     setTransactions(newTxns);
+    // Persist just this transaction to CloudStorage (individual key, fits under 4096 char limit)
+    STORE.saveTransaction(txn).catch(()=>{});
     const updAcc=accounts.map(a=>{
       if(txn.type==="income"&&a.id===txn.accountId)return{...a,balance:a.balance+txn.amount};
       if(txn.type==="expense"&&a.id===txn.accountId)return{...a,balance:a.balance-txn.amount};
@@ -947,6 +1103,8 @@ function App(){
     });
     setAccounts(updAcc);
     setTransactions(transactions.filter(t=>t.id!==id));
+    // Remove from CloudStorage
+    STORE.deleteTransaction(id).catch(()=>{});
   },[transactions,accounts]);
 
   const t=useMemo(()=>mkTheme(settings.darkMode),[settings.darkMode]);
@@ -996,7 +1154,7 @@ function App(){
         })}
       </div>
       <AddModal open={addModal} onClose={()=>setAddModal(false)} accounts={accounts} categories={categories} settings={settings} onSave={handleSaveTxn} t={t} initMode={addMode}/>
-      <TxnDetail txn={selTxn} open={!!selTxn} onClose={()=>setSelTxn(null)} accounts={accounts} categories={categories} onDelete={handleDeleteTxn} t={t}/>
+      <TxnDetail txn={selTxn} open={!!selTxn} onClose={()=>setSelTxn(null)} accounts={accounts} categories={categories} onDelete={handleDeleteTxn} settings={settings} t={t}/>
     </div>
   );
 }
