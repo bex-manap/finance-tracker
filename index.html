@@ -293,7 +293,6 @@ const getAIComment=async(type,amount,currency,category,subcategory,note,settings
   try{
     const res=await fetch("https://api.anthropic.com/v1/messages",{
       method:"POST",
-      headers:{"Content-Type":"application/json"},
       headers:{
         "Content-Type":"application/json",
         "x-api-key":"YOUR_ANTHROPIC_API_KEY_HERE",
