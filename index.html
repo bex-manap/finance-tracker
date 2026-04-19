@@ -335,11 +335,11 @@ const getAIComment=async(type,amount,currency,category,subcategory,note,settings
   const userMsg=`I ${actionDesc}. My note: "${note||"no note"}". Give me your quick take.`;
 
   try{
+    // Calls are routed through a Cloudflare Worker which holds the Anthropic API key
+    // as an encrypted secret, keeping it out of this public repo.
     const res=await fetch("https://finance-tracker-proxy.life-bekzat.workers.dev",{
       method:"POST",
-      headers:{
-        "Content-Type":"application/json"
-      },
+      headers:{"Content-Type":"application/json"},
       body:JSON.stringify({
         model:"claude-sonnet-4-20250514",
         max_tokens:120,
@@ -560,7 +560,7 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,settings,onS
   return(
     <div style={{height:"100%",overflow:"auto",paddingBottom:16}}>
       {/* Header gradient */}
-      <div style={{background:"linear-gradient(160deg,#0f2027,#203a43,#111827)",borderRadius:"0 0 28px 28px",padding:"16px 16px 24px"}}>
+      <div style={{background:"linear-gradient(160deg,#0f2027,#203a43,#111827)",borderRadius:"0 0 28px 28px",padding:"calc(env(safe-area-inset-top, 20px) + 40px) 16px 24px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
             {settings.profilePicture
@@ -729,7 +729,7 @@ function AnalyticsScreen({transactions,categories,settings,t}){
   const maxDay=Math.max(...dayTotals.map(d=>d.amount),1);
 
   return(
-    <div style={{height:"100%",overflow:"auto",padding:"16px 16px 16px"}}>
+    <div style={{height:"100%",overflow:"auto",padding:"calc(env(safe-area-inset-top, 20px) + 40px) 16px 16px"}}>
       <div style={{fontFamily:"system-ui,sans-serif",fontSize:22,fontWeight:700,color:t.text,marginBottom:16}}>Analytics</div>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,background:t.bgCard,borderRadius:12,padding:"10px 16px",border:`1px solid ${t.border}`}}>
         <button onClick={prevMonth} style={{background:"none",border:"none",color:t.accent,fontSize:22,cursor:"pointer",padding:"0 6px"}}>‹</button>
@@ -818,7 +818,7 @@ function HistoryScreen({transactions,accounts,categories,settings,onTxnClick,t})
   },[monthTxns,exchangeRates]);
 
   return(
-    <div style={{height:"100%",overflow:"auto",padding:"16px 16px 16px"}}>
+    <div style={{height:"100%",overflow:"auto",padding:"calc(env(safe-area-inset-top, 20px) + 40px) 16px 16px"}}>
       <div style={{fontFamily:"system-ui,sans-serif",fontSize:22,fontWeight:700,color:t.text,marginBottom:16}}>History</div>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,background:t.bgCard,borderRadius:12,padding:"10px 16px",border:`1px solid ${t.border}`}}>
         <button onClick={prevMonth} style={{background:"none",border:"none",color:t.accent,fontSize:22,cursor:"pointer",padding:"0 6px"}}>‹</button>
@@ -900,7 +900,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
   );
 
   return(
-    <div style={{height:"100%",overflow:"auto",padding:"16px 16px 16px"}}>
+    <div style={{height:"100%",overflow:"auto",padding:"calc(env(safe-area-inset-top, 20px) + 40px) 16px 16px"}}>
       <div style={{fontFamily:"system-ui,sans-serif",fontSize:22,fontWeight:700,color:t.text,marginBottom:16}}>Settings</div>
 
       {/* Profile */}
@@ -1219,7 +1219,7 @@ function App(){
         {tab==="history"&&<HistoryScreen transactions={transactions} accounts={accounts} categories={categories} settings={settings} onTxnClick={setSelTxn} t={t}/>}
         {tab==="settings"&&<SettingsScreen accounts={accounts} categories={categories} fixedExpenses={fixedExpenses} settings={settings} onSettingsChange={setSettings} onAccountsChange={setAccounts} onCategoriesChange={setCategories} onFixedChange={setFixed} t={t}/>}
       </div>
-      <div style={{flexShrink:0,display:"flex",alignItems:"center",background:t.tabBg,borderTop:`1px solid ${t.tabBorder}`,padding:"6px 0 10px",zIndex:50}}>
+      <div style={{flexShrink:0,display:"flex",alignItems:"center",background:t.tabBg,borderTop:`1px solid ${t.tabBorder}`,padding:"6px 0 calc(10px + env(safe-area-inset-bottom, 0px))",zIndex:50}}>
         {TABS.map(({k,icon,label})=>{
           const isAdd=k==="__add__";
           const active=tab===k;
