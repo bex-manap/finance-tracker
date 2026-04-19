@@ -60,11 +60,27 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;}
   <div style="font-size:48px;margin-bottom:16px">💰</div>
   <div class="spinner"></div>
   <div style="font-size:18px;font-weight:700;color:#10b981;font-family:system-ui">Finance Tracker</div>
-  <div id="splash-msg" style="font-size:13px;color:#64748b;margin-top:8px">Loading...</div>
+  <div id="splash-msg" style="font-size:13px;color:#64748b;margin-top:8px;padding:0 20px;text-align:center;max-width:320px">Loading...</div>
+  <div id="splash-err" style="font-size:11px;color:#ef4444;margin-top:16px;padding:0 20px;text-align:left;max-width:320px;font-family:monospace;word-break:break-word;max-height:200px;overflow:auto"></div>
 </div>
 <script>
-// Emergency timeout — if the app hasn't started after 10 seconds, show an error
-// so the user isn't stuck on an infinite loading screen.
+// Global error handler — displays any uncaught JavaScript error directly on the splash
+// so the user can see what's wrong instead of staring at an infinite spinner.
+window.addEventListener("error",function(ev){
+  var errEl=document.getElementById("splash-err");
+  if(errEl){
+    var msg=ev.message||"Unknown error";
+    var src=(ev.filename||"").split("/").pop();
+    errEl.innerHTML+="<div style='margin-bottom:8px'>❌ "+msg+(ev.lineno?" (line "+ev.lineno+")":"")+(src?" in "+src:"")+"</div>";
+  }
+});
+window.addEventListener("unhandledrejection",function(ev){
+  var errEl=document.getElementById("splash-err");
+  if(errEl){
+    errEl.innerHTML+="<div style='margin-bottom:8px'>⚠️ Promise error: "+(ev.reason?.message||String(ev.reason))+"</div>";
+  }
+});
+// Emergency timeout — if the app hasn't started after 10 seconds, show reload button
 setTimeout(function(){
   var splash=document.getElementById("splash");
   if(splash&&!splash.classList.contains("hidden")){
