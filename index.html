@@ -60,8 +60,21 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;}
   <div style="font-size:48px;margin-bottom:16px">💰</div>
   <div class="spinner"></div>
   <div style="font-size:18px;font-weight:700;color:#10b981;font-family:system-ui">Finance Tracker</div>
-  <div style="font-size:13px;color:#64748b;margin-top:8px">Loading...</div>
+  <div id="splash-msg" style="font-size:13px;color:#64748b;margin-top:8px">Loading...</div>
 </div>
+<script>
+// Emergency timeout — if the app hasn't started after 10 seconds, show an error
+// so the user isn't stuck on an infinite loading screen.
+setTimeout(function(){
+  var splash=document.getElementById("splash");
+  if(splash&&!splash.classList.contains("hidden")){
+    var msg=document.getElementById("splash-msg");
+    if(msg){
+      msg.innerHTML="Taking longer than expected...<br><a href='javascript:location.reload()' style='color:#10b981;text-decoration:underline'>Tap to reload</a>";
+    }
+  }
+},10000);
+</script>
 
 <div id="root"></div>
 <script type="text/babel">
@@ -161,22 +174,38 @@ const LS={
   remove:(k)=>{try{localStorage.removeItem(k);}catch{}}
 };
 
-// Promise wrappers for Telegram CloudStorage callback API
-const csGetItem=(key)=>new Promise((resolve)=>{
-  try{CS.getItem(key,(err,val)=>resolve(err?null:val));}catch{resolve(null);}
+// Promise wrappers for Telegram CloudStorage callback API.
+// Each call has a hard 2.5s timeout — if CloudStorage silently hangs
+// (which can happen in certain Telegram contexts), the wrapper resolves
+// to a safe fallback value and the app continues via localStorage.
+const CS_TIMEOUT=2500;
+const withTimeout=(fn,fallback)=>new Promise((resolve)=>{
+  let done=false;
+  const finish=(v)=>{if(!done){done=true;resolve(v);}};
+  setTimeout(()=>finish(fallback),CS_TIMEOUT);
+  try{fn(finish);}catch{finish(fallback);}
 });
-const csGetItems=(keys)=>new Promise((resolve)=>{
-  try{CS.getItems(keys,(err,vals)=>resolve(err?{}:(vals||{})));}catch{resolve({});}
-});
-const csSetItem=(key,val)=>new Promise((resolve)=>{
-  try{CS.setItem(key,val,(err)=>resolve(!err));}catch{resolve(false);}
-});
-const csRemoveItem=(key)=>new Promise((resolve)=>{
-  try{CS.removeItem(key,(err)=>resolve(!err));}catch{resolve(false);}
-});
-const csGetKeys=()=>new Promise((resolve)=>{
-  try{CS.getKeys((err,keys)=>resolve(err?[]:(keys||[])));}catch{resolve([]);}
-});
+
+const csGetItem=(key)=>withTimeout(
+  (done)=>CS.getItem(key,(err,val)=>done(err?null:val)),
+  null
+);
+const csGetItems=(keys)=>withTimeout(
+  (done)=>CS.getItems(keys,(err,vals)=>done(err?{}:(vals||{}))),
+  {}
+);
+const csSetItem=(key,val)=>withTimeout(
+  (done)=>CS.setItem(key,val,(err)=>done(!err)),
+  false
+);
+const csRemoveItem=(key)=>withTimeout(
+  (done)=>CS.removeItem(key,(err)=>done(!err)),
+  false
+);
+const csGetKeys=()=>withTimeout(
+  (done)=>CS.getKeys((err,keys)=>done(err?[]:(keys||[]))),
+  []
+);
 
 // High-level storage: writes to both CloudStorage (if available) and localStorage.
 // Reads prefer CloudStorage, falling back to localStorage.
@@ -1013,56 +1042,75 @@ function App(){
   useEffect(()=>{
     let cancelled=false;
     (async()=>{
-      // Try to load from CloudStorage first; falls back to localStorage if CS unavailable.
-      let accs=await STORE.get("ft_accounts",null);
-      let cats=await STORE.get("ft_categories",null);
-      let sets=await STORE.get("ft_settings",null);
-      let fxd=await STORE.get("ft_fixed",null);
-      let txns=await STORE.getAllTransactions();
+      let accs=null,cats=null,sets=null,fxd=null,txns=[];
+      try{
+        // Try to load from CloudStorage first; falls back to localStorage if CS unavailable or times out.
+        accs=await STORE.get("ft_accounts",null);
+        cats=await STORE.get("ft_categories",null);
+        sets=await STORE.get("ft_settings",null);
+        fxd=await STORE.get("ft_fixed",null);
+        txns=await STORE.getAllTransactions();
+      }catch(e){
+        console.error("Load error, falling back to localStorage:",e);
+      }
 
-      const isFirstRun=!accs&&!cats&&!sets;
+      try{
+        const isFirstRun=!accs&&!cats&&!sets;
 
-      if(isFirstRun){
-        // Brand new user — seed with defaults and sample data
-        accs=DEF_ACCOUNTS;
-        cats=DEF_CATS;
-        sets=DEF_SETTINGS;
-        fxd=DEF_FIXED;
-        txns=mkSampleTxns();
-        // Persist seed data (fire and forget)
-        STORE.set("ft_accounts",accs);
-        STORE.set("ft_categories",cats);
-        STORE.set("ft_settings",sets);
-        STORE.set("ft_fixed",fxd);
-        for(const t of txns)STORE.saveTransaction(t);
-        LS.set("ft_init",true);
-      } else {
-        // Returning user — backfill any missing pieces with defaults
-        accs=accs||LS.get("ft_accounts",DEF_ACCOUNTS);
-        cats=cats||LS.get("ft_categories",DEF_CATS);
-        sets=sets||LS.get("ft_settings",DEF_SETTINGS);
-        fxd=fxd||LS.get("ft_fixed",DEF_FIXED);
-        if(!txns||txns.length===0)txns=LS.get("ft_transactions",[]);
-        // Merge with default settings so new fields (like aiPet) always have a value
-        sets={...DEF_SETTINGS,...sets};
-        // One-time migration: if CloudStorage is available but hasn't been populated yet,
-        // push everything from localStorage up to the cloud.
-        if(CS_AVAILABLE&&!LS.get("ft_cs_migrated",false)){
-          STORE.set("ft_accounts",accs);
-          STORE.set("ft_categories",cats);
-          STORE.set("ft_settings",sets);
-          STORE.set("ft_fixed",fxd);
-          for(const t of txns)STORE.saveTransaction(t);
-          LS.set("ft_cs_migrated",true);
+        if(isFirstRun){
+          // Brand new user — seed with defaults and sample data
+          accs=DEF_ACCOUNTS;
+          cats=DEF_CATS;
+          sets=DEF_SETTINGS;
+          fxd=DEF_FIXED;
+          txns=mkSampleTxns();
+          // Persist seed data (fire and forget — don't block UI)
+          STORE.set("ft_accounts",accs).catch(()=>{});
+          STORE.set("ft_categories",cats).catch(()=>{});
+          STORE.set("ft_settings",sets).catch(()=>{});
+          STORE.set("ft_fixed",fxd).catch(()=>{});
+          for(const tx of txns)STORE.saveTransaction(tx).catch(()=>{});
+          LS.set("ft_init",true);
+        } else {
+          // Returning user — backfill any missing pieces with defaults
+          accs=accs||LS.get("ft_accounts",DEF_ACCOUNTS);
+          cats=cats||LS.get("ft_categories",DEF_CATS);
+          sets=sets||LS.get("ft_settings",DEF_SETTINGS);
+          fxd=fxd||LS.get("ft_fixed",DEF_FIXED);
+          if(!txns||txns.length===0)txns=LS.get("ft_transactions",[]);
+          // Merge with default settings so new fields (like aiPet) always have a value
+          sets={...DEF_SETTINGS,...sets};
+          // One-time migration: if CloudStorage is available but hasn't been populated yet,
+          // push everything from localStorage up to the cloud (fire and forget)
+          if(CS_AVAILABLE&&!LS.get("ft_cs_migrated",false)){
+            STORE.set("ft_accounts",accs).catch(()=>{});
+            STORE.set("ft_categories",cats).catch(()=>{});
+            STORE.set("ft_settings",sets).catch(()=>{});
+            STORE.set("ft_fixed",fxd).catch(()=>{});
+            for(const tx of txns)STORE.saveTransaction(tx).catch(()=>{});
+            LS.set("ft_cs_migrated",true);
+          }
         }
+      }catch(e){
+        console.error("Data prep error:",e);
+        // Last resort fallback to defaults
+        accs=accs||DEF_ACCOUNTS;
+        cats=cats||DEF_CATS;
+        sets=sets||DEF_SETTINGS;
+        fxd=fxd||DEF_FIXED;
+        txns=txns||[];
       }
 
       if(cancelled)return;
-      setAccountsRaw(accs);
-      setCategoriesRaw(cats);
-      setSettingsRaw(sets);
-      setFixedRaw(fxd);
-      setTransactionsRaw(txns);
+
+      // Always complete loading, no matter what happened above
+      try{
+        setAccountsRaw(accs||DEF_ACCOUNTS);
+        setCategoriesRaw(cats||DEF_CATS);
+        setSettingsRaw({...DEF_SETTINGS,...(sets||{})});
+        setFixedRaw(fxd||DEF_FIXED);
+        setTransactionsRaw(txns||[]);
+      }catch(e){console.error("State set error:",e);}
 
       // Hide splash screen
       const splash=document.getElementById("splash");
