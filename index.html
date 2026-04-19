@@ -21,7 +21,7 @@ try {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
-html,body,#root{height:100%;overflow:hidden;}
+html,body,#root{height:100%;overflow:hidden;max-width:100vw;}
 body{
   font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Arial,sans-serif;
   overscroll-behavior:none;
@@ -31,8 +31,15 @@ body{
 input,select,textarea,button{
   font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Arial,sans-serif;
   outline:none;border:none;
+  max-width:100%;
 }
 input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;}
+input[type=date]{
+  -webkit-appearance:none;
+  appearance:none;
+  display:block;
+  min-width:0;
+}
 .slide-up{animation:slideUp .25s ease;}
 @keyframes slideUp{from{transform:translateY(20px);opacity:0;}to{transform:translateY(0);opacity:1;}}
 .fade-in{animation:fadeIn .2s ease;}
@@ -162,14 +169,25 @@ const QUOTES=[
 
 // ── DEFAULTS ──
 const DEF_CATS=[
-  {id:"cat1",name:"Food",icon:"🍔",color:"#f97316",subcategories:[{id:"s1",name:"Dining out"},{id:"s2",name:"Groceries"},{id:"s3",name:"Coffee"}]},
-  {id:"cat2",name:"Transport",icon:"🚗",color:"#3b82f6",subcategories:[{id:"s4",name:"Taxi"},{id:"s5",name:"Fuel"},{id:"s6",name:"Transit"}]},
-  {id:"cat3",name:"Housing",icon:"🏠",color:"#8b5cf6",subcategories:[{id:"s7",name:"Rent"},{id:"s8",name:"Utilities"},{id:"s9",name:"Internet"}]},
-  {id:"cat4",name:"Entertainment",icon:"🎮",color:"#ec4899",subcategories:[{id:"s10",name:"Streaming"},{id:"s11",name:"Games"},{id:"s12",name:"Events"}]},
-  {id:"cat5",name:"Health",icon:"💊",color:"#10b981",subcategories:[{id:"s13",name:"Pharmacy"},{id:"s14",name:"Doctor"},{id:"s15",name:"Gym"}]},
-  {id:"cat6",name:"Shopping",icon:"👕",color:"#f59e0b",subcategories:[{id:"s16",name:"Clothes"},{id:"s17",name:"Electronics"},{id:"s18",name:"Other"}]},
-  {id:"cat7",name:"Income",icon:"💼",color:"#06b6d4",subcategories:[{id:"s19",name:"Salary"},{id:"s20",name:"Freelance"},{id:"s21",name:"Other"}]},
+  // Expense categories
+  {id:"cat1",name:"Food",icon:"🍔",color:"#f97316",type:"expense",subcategories:[{id:"s1",name:"Dining out"},{id:"s2",name:"Groceries"},{id:"s3",name:"Coffee"}]},
+  {id:"cat2",name:"Transport",icon:"🚗",color:"#3b82f6",type:"expense",subcategories:[{id:"s4",name:"Taxi"},{id:"s5",name:"Fuel"},{id:"s6",name:"Transit"}]},
+  {id:"cat3",name:"Housing",icon:"🏠",color:"#8b5cf6",type:"expense",subcategories:[{id:"s7",name:"Rent"},{id:"s8",name:"Utilities"},{id:"s9",name:"Internet"}]},
+  {id:"cat4",name:"Entertainment",icon:"🎮",color:"#ec4899",type:"expense",subcategories:[{id:"s10",name:"Streaming"},{id:"s11",name:"Games"},{id:"s12",name:"Events"}]},
+  {id:"cat5",name:"Health",icon:"💊",color:"#10b981",type:"expense",subcategories:[{id:"s13",name:"Pharmacy"},{id:"s14",name:"Doctor"},{id:"s15",name:"Gym"}]},
+  {id:"cat6",name:"Shopping",icon:"👕",color:"#f59e0b",type:"expense",subcategories:[{id:"s16",name:"Clothes"},{id:"s17",name:"Electronics"},{id:"s18",name:"Other"}]},
+  // Income categories
+  {id:"cat7",name:"Salary",icon:"💼",color:"#06b6d4",type:"income",subcategories:[]},
+  {id:"cat8",name:"Loan",icon:"💰",color:"#84cc16",type:"income",subcategories:[]},
 ];
+
+// Helper: determine if a category applies to the given transaction mode.
+// Categories without explicit type default to expense, but "Income/Salary/Loan/Freelance"-named
+// categories are treated as income for backward compat with older saved data.
+const categoryMatchesMode=(cat,mode)=>{
+  const type=cat.type||(/salary|income|loan|freelance/i.test(cat.name)?"income":"expense");
+  return type===mode;
+};
 const DEF_ACCOUNTS=[
   {id:"acc1",name:"Freedom Bank",type:"bank",currency:"KZT",balance:0,icon:"🏦",color:"#3b82f6",isActive:true},
   {id:"acc2",name:"Kaspi",type:"bank",currency:"KZT",balance:0,icon:"💳",color:"#ef4444",isActive:true},
@@ -337,7 +355,7 @@ const getAIComment=async(type,amount,currency,category,subcategory,note,settings
       method:"POST",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({
-        model:"claude-sonnet-4-20250514",
+        model:"claude-haiku-4-5-20251001",
         max_tokens:120,
         system:systemPrompt,
         messages:[{role:"user",content:userMsg}]
@@ -388,7 +406,7 @@ function Modal({open,onClose,title,children,t}){
           <span style={{fontFamily:"system-ui,sans-serif",fontSize:18,fontWeight:600,color:t.text}}>{title}</span>
           <button onClick={onClose} style={{background:t.bgInput,border:"none",borderRadius:8,width:32,height:32,cursor:"pointer",color:t.textMuted,fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
         </div>
-        <div style={{overflow:"auto",padding:"16px 20px 40px",flex:1}}>{children}</div>
+        <div style={{overflow:"auto",overflowX:"hidden",padding:"16px 20px 40px",flex:1}}>{children}</div>
       </div>
     </div>
   );
@@ -411,6 +429,14 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
   },[open,initMode]);
 
   const selCat=categories.find(c=>c.id===categoryId);
+  // Filter categories based on current mode (expense shows only expense categories, etc.)
+  const filteredCategories=categories.filter(c=>categoryMatchesMode(c,mode));
+  // Reset category when mode changes so user isn't stuck with an invalid selection
+  const handleModeChange=(newMode)=>{
+    setMode(newMode);
+    setCategoryId("");
+    setSubcategoryId("");
+  };
 
   const handleSave=async()=>{
     if(!amount||isNaN(+amount)||+amount<=0)return;
@@ -436,7 +462,7 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
     <Modal open={open} onClose={onClose} title="Add Transaction" t={t}>
       <div style={{display:"flex",gap:8,marginBottom:16}}>
         {modes.map(({k,l,c})=>(
-          <button key={k} onClick={()=>setMode(k)} style={{flex:1,padding:"9px 0",borderRadius:10,border:`1.5px solid ${k===mode?c:t.border}`,background:k===mode?c+"22":"transparent",color:k===mode?c:t.textMuted,fontWeight:500,fontSize:13,cursor:"pointer",fontFamily:"system-ui,sans-serif"}}>{l}</button>
+          <button key={k} onClick={()=>handleModeChange(k)} style={{flex:1,padding:"9px 0",borderRadius:10,border:`1.5px solid ${k===mode?c:t.border}`,background:k===mode?c+"22":"transparent",color:k===mode?c:t.textMuted,fontWeight:500,fontSize:13,cursor:"pointer",fontFamily:"system-ui,sans-serif"}}>{l}</button>
         ))}
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -463,7 +489,7 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
             <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>Category</div>
             <select value={categoryId} onChange={e=>{setCategoryId(e.target.value);setSubcategoryId("");}} style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"11px 14px",fontSize:15,cursor:"pointer"}}>
               <option value="">— Select category —</option>
-              {categories.map(c=><option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
+              {filteredCategories.map(c=><option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
             </select>
           </div>
         )}
@@ -880,6 +906,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
   const[newAccType,setNewAccType]=useState("bank");
   const[newCatName,setNewCatName]=useState("");
   const[newCatIcon,setNewCatIcon]=useState("📌");
+  const[newCatType,setNewCatType]=useState("expense");
   const[newFeName,setNewFeName]=useState("");
   const[newFeAmt,setNewFeAmt]=useState("");
   const[newFeDay,setNewFeDay]=useState("1");
@@ -965,17 +992,28 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
       <Section k="categories" label="Categories" icon="🗂️"/>
       {sec==="categories"&&(
         <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:8}}>
-          {categories.map(c=>(
-            <div key={c.id} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 0",borderBottom:`1px solid ${t.border}`}}>
-              <span style={{fontSize:18}}>{c.icon}</span>
-              <span style={{flex:1,fontSize:14,color:t.text}}>{c.name} <span style={{color:t.textMuted,fontSize:12}}>({c.subcategories?.length||0} sub)</span></span>
-              <button onClick={()=>onCategoriesChange(categories.filter(x=>x.id!==c.id))} style={{background:"#ef444422",border:"none",borderRadius:6,padding:"5px 10px",color:"#ef4444",cursor:"pointer",fontSize:12}}>✕</button>
+          {categories.map(c=>{
+            const type=c.type||(/salary|income|loan|freelance/i.test(c.name)?"income":"expense");
+            const badgeColor=type==="income"?"#10b981":"#ef4444";
+            return(
+              <div key={c.id} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 0",borderBottom:`1px solid ${t.border}`}}>
+                <span style={{fontSize:18}}>{c.icon}</span>
+                <span style={{flex:1,fontSize:14,color:t.text,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</span>
+                <span style={{fontSize:10,color:badgeColor,border:`1px solid ${badgeColor}44`,borderRadius:6,padding:"2px 6px",background:badgeColor+"15",textTransform:"uppercase",flexShrink:0}}>{type}</span>
+                <span style={{color:t.textMuted,fontSize:11,flexShrink:0}}>{c.subcategories?.length||0}</span>
+                <button onClick={()=>onCategoriesChange(categories.filter(x=>x.id!==c.id))} style={{background:"#ef444422",border:"none",borderRadius:6,padding:"5px 10px",color:"#ef4444",cursor:"pointer",fontSize:12,flexShrink:0}}>✕</button>
+              </div>
+            );
+          })}
+          <div style={{marginTop:10,display:"flex",gap:8,alignItems:"center"}}>
+            <div style={{display:"flex",borderRadius:8,overflow:"hidden",border:`1px solid ${t.border}`,flexShrink:0}}>
+              {["expense","income"].map(tt=>(
+                <button key={tt} onClick={()=>setNewCatType(tt)} style={{padding:"7px 10px",background:newCatType===tt?(tt==="income"?"#10b981":"#ef4444"):t.bgInput,color:newCatType===tt?"#fff":t.textMuted,border:"none",fontSize:11,fontWeight:600,cursor:"pointer",textTransform:"uppercase"}}>{tt==="income"?"In":"Out"}</button>
+              ))}
             </div>
-          ))}
-          <div style={{marginTop:10,display:"flex",gap:8}}>
-            <input value={newCatIcon} onChange={e=>setNewCatIcon(e.target.value)} style={{width:46,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"8px",fontSize:20,textAlign:"center"}}/>
-            <input value={newCatName} onChange={e=>setNewCatName(e.target.value)} placeholder="Category name" style={{flex:1,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"8px 10px",fontSize:14,fontFamily:"system-ui,sans-serif"}}/>
-            <button onClick={()=>{if(!newCatName.trim())return;onCategoriesChange([...categories,{id:uid(),name:newCatName.trim(),icon:newCatIcon||"📌",color:"#10b981",subcategories:[]}]);setNewCatName("");setNewCatIcon("📌");}} style={{background:"#10b981",border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",cursor:"pointer",fontSize:16,fontWeight:700}}>+</button>
+            <input value={newCatIcon} onChange={e=>setNewCatIcon(e.target.value)} style={{width:44,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"8px",fontSize:18,textAlign:"center",flexShrink:0}}/>
+            <input value={newCatName} onChange={e=>setNewCatName(e.target.value)} placeholder="Name" style={{flex:1,minWidth:0,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"8px 10px",fontSize:14,fontFamily:"system-ui,sans-serif"}}/>
+            <button onClick={()=>{if(!newCatName.trim())return;onCategoriesChange([...categories,{id:uid(),name:newCatName.trim(),icon:newCatIcon||"📌",color:newCatType==="income"?"#10b981":"#ef4444",type:newCatType,subcategories:[]}]);setNewCatName("");setNewCatIcon("📌");}} style={{background:"#10b981",border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",cursor:"pointer",fontSize:16,fontWeight:700,flexShrink:0}}>+</button>
           </div>
         </div>
       )}
