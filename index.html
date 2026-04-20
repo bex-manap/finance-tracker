@@ -450,6 +450,43 @@ const mkTheme=(dark)=>({
 });
 
 // ── MODAL ──
+// ── PET COMMENT (COLLAPSIBLE) ──
+// Compact pill in the transaction header row. Tap to expand the comment inline below.
+// Keeps list density high — comment is hidden by default and expands on tap.
+function PetCommentBlock({comment,petEmoji,t}){
+  const[open,setOpen]=useState(false);
+  if(!comment)return null;
+  return(
+    <div>
+      <div style={{display:"flex",justifyContent:"flex-end",marginTop:4}}>
+        <span onClick={(e)=>{e.stopPropagation();setOpen(!open);}} style={{
+          display:"inline-flex",alignItems:"center",gap:5,
+          background:open?"#10b98122":t.bgCard2,
+          border:`1px solid ${open?"#10b98144":t.border}`,
+          borderRadius:12,padding:"3px 9px",fontSize:11,
+          cursor:"pointer",flexShrink:0,
+          transition:"all .15s",userSelect:"none",
+          color:t.textMuted
+        }}>
+          <span style={{fontSize:13}}>{petEmoji}</span>
+          <span style={{fontSize:10}}>{open?"hide":"ask pet"}</span>
+          <span style={{fontSize:9,color:t.textMuted,transform:open?"rotate(180deg)":"none",transition:"transform .15s",lineHeight:1}}>▾</span>
+        </span>
+      </div>
+      {open&&(
+        <div onClick={(e)=>e.stopPropagation()} className="fade-in" style={{
+          marginTop:8,padding:"8px 10px",background:t.bgCard2,borderRadius:8,
+          borderLeft:"3px solid #10b981"
+        }}>
+          <span style={{fontSize:12,color:t.textMuted,fontStyle:"italic",lineHeight:1.5}}>
+            {petEmoji} {comment}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Modal({open,onClose,title,children,t}){
   if(!open)return null;
   return(
@@ -816,9 +853,7 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,settings,onS
                     <div style={{fontSize:16,fontWeight:700,color,fontFamily:"monospace"}}>{sign}{fmtAmt(txn.amount,txn.currency)}</div>
                   </div>
                   {txn.aiComment&&(
-                    <div style={{marginTop:8,padding:"8px 10px",background:t.bgCard2,borderRadius:8,borderLeft:"3px solid #10b981"}}>
-                      <span style={{fontSize:12,color:t.textMuted,fontStyle:"italic"}}>{(PETS[settings.aiPet]||PETS.dog).emoji} {txn.aiComment}</span>
-                    </div>
+                    <PetCommentBlock comment={txn.aiComment} petEmoji={(PETS[settings.aiPet]||PETS.dog).emoji} t={t}/>
                   )}
                 </div>
               );
@@ -993,7 +1028,7 @@ function HistoryScreen({transactions,accounts,categories,settings,onTxnClick,t})
                       </div>
                       <div style={{fontSize:15,fontWeight:700,color,fontFamily:"monospace"}}>{sign}{fmtAmt(txn.amount,txn.currency)}</div>
                     </div>
-                    {txn.aiComment&&<div style={{marginTop:7,fontSize:12,color:t.textMuted,fontStyle:"italic",paddingLeft:44}}>{(PETS[settings.aiPet]||PETS.dog).emoji} {txn.aiComment.slice(0,90)}{txn.aiComment.length>90?"…":""}</div>}
+                    {txn.aiComment&&<PetCommentBlock comment={txn.aiComment} petEmoji={(PETS[settings.aiPet]||PETS.dog).emoji} t={t}/>}
                   </div>
                 );
               })}
