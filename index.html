@@ -139,7 +139,12 @@ const tg = window.Telegram?.WebApp;
 const uid=()=>`${Date.now()}_${Math.random().toString(36).substr(2,5)}`;
 const MONTHS_FULL=["January","February","March","April","May","June","July","August","September","October","November","December"];
 const MONTHS_SHORT=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-const sym={KZT:"₸",USD:"$",EUR:"€",USDT:"₮"};
+const sym={KZT:"₸",USD:"$",EUR:"€",USDT:"₮",BTC:"₿",ETH:"Ξ"};
+// Allowed transaction currencies per account type — bank accounts handle fiat,
+// crypto accounts handle stablecoins and major cryptos.
+const BANK_CURRENCIES=["KZT","USD","EUR"];
+const CRYPTO_CURRENCIES=["USDT","BTC","ETH"];
+const getAccountCurrencies=(accountType)=>accountType==="crypto"?CRYPTO_CURRENCIES:BANK_CURRENCIES;
 const fmtAmt=(n,c="KZT")=>`${sym[c]||c}${Math.abs(n).toLocaleString("en-US",{minimumFractionDigits:0,maximumFractionDigits:0})}`;
 const fmtFull=(n,c="KZT")=>`${sym[c]||c}${Math.abs(n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 const toKZT=(a,c,r)=>c==="KZT"?a:a*(r[c]||1);
@@ -179,6 +184,7 @@ const DEF_CATS=[
   // Income categories
   {id:"cat7",name:"Salary",icon:"💼",color:"#06b6d4",type:"income",subcategories:[]},
   {id:"cat8",name:"Loan",icon:"💰",color:"#84cc16",type:"income",subcategories:[]},
+  {id:"cat9",name:"Freelance",icon:"💻",color:"#a855f7",type:"income",subcategories:[]},
 ];
 
 // Helper: determine if a category applies to the given transaction mode.
@@ -220,7 +226,9 @@ const DEF_SETTINGS={
   aiLanguage:"English",
   aiCustomPrompt:"",
   onboarded:false,
-  exchangeRates:{KZT:1,USD:520,EUR:560,USDT:520}
+  // Exchange rates normalized to "1 UNIT = X KZT". Updated on app load via live API.
+  exchangeRates:{KZT:1,USD:520,EUR:560,USDT:520,BTC:35000000,ETH:1750000},
+  lastRateUpdate:null
 };
 const mkSampleTxns=()=>{
   const now=new Date(),y=now.getFullYear(),m=now.getMonth();
@@ -324,6 +332,39 @@ const STORE={
     LS.set("ft_transactions",allLocal.filter(t=>t.id!==id));
     if(CS_AVAILABLE)await csRemoveItem(`ft_txn_${id}`);
   }
+};
+
+// ── LIVE EXCHANGE RATES ──
+// Fetches real-time rates from free public APIs. No API key required.
+// - Fiat (USD, EUR): exchangerate-api (open access, no key)
+// - Crypto (BTC, ETH, USDT): CoinGecko public API
+// Returns an object like {KZT:1, USD:520, EUR:560, USDT:520, BTC:35000000, ETH:1750000}
+// Each value = how many KZT equals 1 unit of that currency.
+const fetchLiveRates=async()=>{
+  const rates={KZT:1};
+  try{
+    // Fiat rates (USD, EUR) — converts from USD base, then cross-rates via USD→KZT
+    const fiatRes=await fetch("https://open.er-api.com/v6/latest/USD");
+    const fiatData=await fiatRes.json();
+    if(fiatData?.rates?.KZT){
+      const usdToKzt=fiatData.rates.KZT;
+      rates.USD=usdToKzt;
+      rates.EUR=fiatData.rates.EUR?usdToKzt/fiatData.rates.EUR:560;
+      rates.USDT=usdToKzt; // USDT tracks USD 1:1
+    }
+  }catch(e){console.warn("Fiat rate fetch failed:",e);}
+
+  try{
+    // Crypto rates from CoinGecko — returns prices in USD, we convert to KZT
+    const cryptoRes=await fetch("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,tether&vs_currencies=usd");
+    const cryptoData=await cryptoRes.json();
+    const usdKzt=rates.USD||520;
+    if(cryptoData?.bitcoin?.usd)rates.BTC=cryptoData.bitcoin.usd*usdKzt;
+    if(cryptoData?.ethereum?.usd)rates.ETH=cryptoData.ethereum.usd*usdKzt;
+    if(cryptoData?.tether?.usd)rates.USDT=cryptoData.tether.usd*usdKzt;
+  }catch(e){console.warn("Crypto rate fetch failed:",e);}
+
+  return rates;
 };
 
 // ── AI COACH ──
@@ -431,37 +472,76 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
   const[amount,setAmount]=useState("");
   const[accountId,setAccountId]=useState(accounts[0]?.id||"");
   const[toAccountId,setToAccountId]=useState(accounts[1]?.id||"");
+  // Per-transaction currency lets users record e.g. a USD expense from a KZT bank account
+  const[currency,setCurrency]=useState("KZT");
   const[categoryId,setCategoryId]=useState("");
   const[subcategoryId,setSubcategoryId]=useState("");
   const[note,setNote]=useState("");
   const[date,setDate]=useState(new Date().toISOString().split("T")[0]);
   const[loading,setLoading]=useState(false);
 
+  // The currently selected "from" account determines which currencies can be used
+  const selAcc=accounts.find(a=>a.id===accountId);
+  const availableCurrencies=selAcc?getAccountCurrencies(selAcc.type):["KZT"];
+
+  // When account changes, if the chosen currency isn't valid for that account type, reset to the account's default
   useEffect(()=>{
-    if(open){setMode(initMode||"expense");setAmount("");setNote("");setCategoryId("");setSubcategoryId("");}
+    if(selAcc&&!availableCurrencies.includes(currency)){
+      setCurrency(selAcc.currency||availableCurrencies[0]);
+    }
+  },[accountId]);
+
+  useEffect(()=>{
+    if(open){
+      setMode(initMode||"expense");
+      setAmount("");setNote("");setCategoryId("");setSubcategoryId("");
+      // Default currency = selected account's native currency
+      const acc=accounts.find(a=>a.id===accountId);
+      if(acc)setCurrency(acc.currency);
+    }
   },[open,initMode]);
 
   const selCat=categories.find(c=>c.id===categoryId);
-  // Filter categories based on current mode (expense shows only expense categories, etc.)
   const filteredCategories=categories.filter(c=>categoryMatchesMode(c,mode));
-  // Reset category when mode changes so user isn't stuck with an invalid selection
   const handleModeChange=(newMode)=>{
     setMode(newMode);
     setCategoryId("");
     setSubcategoryId("");
   };
 
+  // For transfers: compute how much the destination account will receive based on exchange rates
+  const toAcc=accounts.find(a=>a.id===toAccountId);
+  const transferConverted=useMemo(()=>{
+    if(mode!=="transfer"||!selAcc||!toAcc||!amount||isNaN(+amount))return null;
+    const rates=settings.exchangeRates||{};
+    // Convert: source currency → KZT → destination currency
+    const kztValue=(+amount)*(rates[selAcc.currency]||1);
+    const destAmount=kztValue/(rates[toAcc.currency]||1);
+    return{amount:destAmount,currency:toAcc.currency};
+  },[mode,selAcc,toAcc,amount,settings.exchangeRates]);
+
   const handleSave=async()=>{
     if(!amount||isNaN(+amount)||+amount<=0)return;
     haptic();
     const acc=accounts.find(a=>a.id===accountId);
-    const txn={id:uid(),type:mode,amount:+amount,currency:acc?.currency||"KZT",accountId,toAccountId:mode==="transfer"?toAccountId:null,categoryId:categoryId||null,subcategoryId:subcategoryId||null,note,date:new Date(date).toISOString(),aiComment:null};
-    // Get AI comment for expenses AND income (not transfers)
+    // For non-transfers, use the selected transaction currency.
+    // For transfers, we record the outgoing amount in the source account's currency
+    // and handle the destination conversion in handleSaveTxn.
+    const txnCurrency=mode==="transfer"?(acc?.currency||"KZT"):currency;
+    const txn={
+      id:uid(),type:mode,amount:+amount,currency:txnCurrency,
+      accountId,toAccountId:mode==="transfer"?toAccountId:null,
+      categoryId:categoryId||null,subcategoryId:subcategoryId||null,
+      note,date:new Date(date).toISOString(),aiComment:null,
+      // For transfers, also store the converted destination amount
+      toAmount:mode==="transfer"&&transferConverted?transferConverted.amount:null,
+      toCurrency:mode==="transfer"&&transferConverted?transferConverted.currency:null
+    };
     if((mode==="expense"||mode==="income")&&settings.aiEnabled){
       setLoading(true);
       const cat=categories.find(c=>c.id===categoryId);
       const sub=cat?.subcategories?.find(s=>s.id===subcategoryId);
-      const comment=await getAIComment(mode,+amount,acc?.currency||"KZT",cat?.name||"",sub?.name||"",note,settings);
+      const comment=await getAIComment(mode,+amount,txnCurrency,cat?.name||"",sub?.name||"",note,settings);
       txn.aiComment=comment;
       setLoading(false);
     }
@@ -481,7 +561,15 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
         <div>
           <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>Amount</div>
-          <input value={amount} onChange={e=>setAmount(e.target.value)} placeholder="0.00" type="number" style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"13px 14px",fontSize:28,fontFamily:"monospace",fontWeight:500}}/>
+          <div style={{display:"flex",gap:8}}>
+            <input value={amount} onChange={e=>setAmount(e.target.value)} placeholder="0.00" type="number" style={{flex:1,minWidth:0,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"13px 14px",fontSize:24,fontFamily:"monospace",fontWeight:500}}/>
+            {/* Currency picker — only shown for income/expense, not transfers (transfers use source account's currency) */}
+            {mode!=="transfer"&&(
+              <select value={currency} onChange={e=>setCurrency(e.target.value)} style={{background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"0 12px",fontSize:14,fontWeight:600,cursor:"pointer",minWidth:80,flexShrink:0}}>
+                {availableCurrencies.map(c=><option key={c} value={c}>{sym[c]} {c}</option>)}
+              </select>
+            )}
+          </div>
         </div>
         <div>
           <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>From Account</div>
@@ -495,6 +583,13 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
             <select value={toAccountId} onChange={e=>setToAccountId(e.target.value)} style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"11px 14px",fontSize:15,cursor:"pointer"}}>
               {accounts.filter(a=>a.id!==accountId).map(a=><option key={a.id} value={a.id}>{a.icon} {a.name} ({a.currency})</option>)}
             </select>
+            {/* Conversion preview — shown only when source and destination currencies differ */}
+            {transferConverted&&selAcc&&toAcc&&selAcc.currency!==toAcc.currency&&(
+              <div style={{marginTop:8,padding:"10px 12px",background:t.bgCard2,borderRadius:10,fontSize:13,color:t.textMuted,display:"flex",alignItems:"center",gap:8}}>
+                <span>💱</span>
+                <span>≈ <span style={{color:t.text,fontWeight:600,fontFamily:"monospace"}}>{fmtFull(transferConverted.amount,transferConverted.currency)}</span> will arrive</span>
+              </div>
+            )}
           </div>
         )}
         {mode!=="transfer"&&(
@@ -911,7 +1006,7 @@ function HistoryScreen({transactions,accounts,categories,settings,onTxnClick,t})
 }
 
 // ── SETTINGS SCREEN ──
-function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsChange,onAccountsChange,onCategoriesChange,onFixedChange,onReset,t}){
+function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsChange,onAccountsChange,onCategoriesChange,onFixedChange,onReset,onRefreshRates,t}){
   const[sec,setSec]=useState(null);
   const[editAccId,setEditAccId]=useState(null);
   const[editAccName,setEditAccName]=useState("");
@@ -1094,14 +1189,23 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
       <Section k="currencies" label="Exchange Rates" icon="💱"/>
       {sec==="currencies"&&(
         <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:8}}>
-          {["USD","EUR","USDT"].map(c=>(
+          <div style={{fontSize:11,color:t.textMuted,marginBottom:10,lineHeight:1.5}}>
+            Rates update automatically once per hour from public APIs (exchangerate-api.com & CoinGecko).
+            {settings.lastRateUpdate&&(
+              <div style={{marginTop:4}}>Last updated: {new Date(settings.lastRateUpdate).toLocaleString()}</div>
+            )}
+          </div>
+          {["USD","EUR","USDT","BTC","ETH"].map(c=>(
             <div key={c} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:`1px solid ${t.border}`}}>
-              <span style={{fontSize:14,color:t.text,width:52,fontWeight:700,fontFamily:"monospace"}}>{c}</span>
+              <span style={{fontSize:14,color:t.text,width:48,fontWeight:700,fontFamily:"monospace"}}>{c}</span>
               <span style={{fontSize:13,color:t.textMuted,flex:1}}>1 {c} =</span>
-              <input value={settings.exchangeRates[c]||0} onChange={e=>onSettingsChange({...settings,exchangeRates:{...settings.exchangeRates,[c]:+e.target.value}})} type="number" style={{width:80,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"6px 10px",fontSize:14,textAlign:"right"}}/>
+              <input value={Math.round((settings.exchangeRates[c]||0)*100)/100} onChange={e=>onSettingsChange({...settings,exchangeRates:{...settings.exchangeRates,[c]:+e.target.value}})} type="number" style={{width:100,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"6px 10px",fontSize:13,textAlign:"right",fontFamily:"monospace"}}/>
               <span style={{fontSize:13,color:t.textMuted}}>₸</span>
             </div>
           ))}
+          <button onClick={onRefreshRates} style={{width:"100%",marginTop:12,background:"transparent",color:"#10b981",border:"1.5px solid #10b981",borderRadius:10,padding:"10px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"system-ui,sans-serif"}}>
+            🔄 Refresh rates now
+          </button>
         </div>
       )}
 
@@ -1495,44 +1599,90 @@ function App(){
       const splash=document.getElementById("splash");
       if(splash){splash.classList.add("hidden");setTimeout(()=>splash.remove(),300);}
       setLoaded(true);
+
+      // Fetch live exchange rates in the background — refresh once per hour to avoid
+      // hammering public APIs. Doesn't block app startup; if it fails, cached rates are used.
+      try{
+        const lastUpdate=sets?.lastRateUpdate||0;
+        const hourAgo=Date.now()-3600000;
+        if(lastUpdate<hourAgo){
+          const liveRates=await fetchLiveRates();
+          if(cancelled)return;
+          // Only update rates that actually came back (partial updates OK)
+          const mergedRates={...(sets?.exchangeRates||DEF_SETTINGS.exchangeRates),...liveRates};
+          const updatedSettings={...DEF_SETTINGS,...(sets||{}),exchangeRates:mergedRates,lastRateUpdate:Date.now()};
+          setSettingsRaw(updatedSettings);
+          STORE.set("ft_settings",updatedSettings).catch(()=>{});
+        }
+      }catch(e){console.warn("Rate update failed, using cached rates:",e);}
     })();
     return()=>{cancelled=true;};
   },[]);
 
+  // Helper: convert an amount from one currency to another using current rates.
+  // All rates are stored as "1 UNIT = X KZT", so we go via KZT as the common base.
+  const convertAmount=useCallback((amount,fromCurrency,toCurrency)=>{
+    if(fromCurrency===toCurrency)return amount;
+    const rates=settings.exchangeRates||{};
+    const kztValue=amount*(rates[fromCurrency]||1);
+    return kztValue/(rates[toCurrency]||1);
+  },[settings.exchangeRates]);
+
   const handleSaveTxn=useCallback((txn)=>{
     const newTxns=[...transactions,txn];
     setTransactions(newTxns);
-    // Persist just this transaction to CloudStorage (individual key, fits under 4096 char limit)
     STORE.saveTransaction(txn).catch(()=>{});
     const updAcc=accounts.map(a=>{
-      if(txn.type==="income"&&a.id===txn.accountId)return{...a,balance:a.balance+txn.amount};
-      if(txn.type==="expense"&&a.id===txn.accountId)return{...a,balance:a.balance-txn.amount};
+      if(txn.type==="income"&&a.id===txn.accountId){
+        // Convert transaction currency into the account's native currency before adjusting balance
+        const delta=convertAmount(txn.amount,txn.currency,a.currency);
+        return{...a,balance:a.balance+delta};
+      }
+      if(txn.type==="expense"&&a.id===txn.accountId){
+        const delta=convertAmount(txn.amount,txn.currency,a.currency);
+        return{...a,balance:a.balance-delta};
+      }
       if(txn.type==="transfer"){
-        if(a.id===txn.accountId)return{...a,balance:a.balance-txn.amount};
-        if(a.id===txn.toAccountId)return{...a,balance:a.balance+txn.amount};
+        if(a.id===txn.accountId){
+          // Deduct the outgoing amount (already in source account's currency)
+          return{...a,balance:a.balance-txn.amount};
+        }
+        if(a.id===txn.toAccountId){
+          // Add the converted amount — use precomputed toAmount if available, otherwise convert now
+          const incoming=txn.toAmount!=null?txn.toAmount:convertAmount(txn.amount,txn.currency,a.currency);
+          return{...a,balance:a.balance+incoming};
+        }
       }
       return a;
     });
     setAccounts(updAcc);
-  },[transactions,accounts]);
+  },[transactions,accounts,convertAmount]);
 
   const handleDeleteTxn=useCallback((id)=>{
     const txn=transactions.find(t=>t.id===id);
     if(!txn)return;
     const updAcc=accounts.map(a=>{
-      if(txn.type==="income"&&a.id===txn.accountId)return{...a,balance:a.balance-txn.amount};
-      if(txn.type==="expense"&&a.id===txn.accountId)return{...a,balance:a.balance+txn.amount};
+      if(txn.type==="income"&&a.id===txn.accountId){
+        const delta=convertAmount(txn.amount,txn.currency,a.currency);
+        return{...a,balance:a.balance-delta};
+      }
+      if(txn.type==="expense"&&a.id===txn.accountId){
+        const delta=convertAmount(txn.amount,txn.currency,a.currency);
+        return{...a,balance:a.balance+delta};
+      }
       if(txn.type==="transfer"){
         if(a.id===txn.accountId)return{...a,balance:a.balance+txn.amount};
-        if(a.id===txn.toAccountId)return{...a,balance:a.balance-txn.amount};
+        if(a.id===txn.toAccountId){
+          const incoming=txn.toAmount!=null?txn.toAmount:convertAmount(txn.amount,txn.currency,a.currency);
+          return{...a,balance:a.balance-incoming};
+        }
       }
       return a;
     });
     setAccounts(updAcc);
     setTransactions(transactions.filter(t=>t.id!==id));
-    // Remove from CloudStorage
     STORE.deleteTransaction(id).catch(()=>{});
-  },[transactions,accounts]);
+  },[transactions,accounts,convertAmount]);
 
   // Reset all data: clears both localStorage and CloudStorage, then reloads the app
   const handleReset=useCallback(async()=>{
@@ -1550,6 +1700,19 @@ function App(){
     // Hard reload to re-initialize with empty defaults
     location.reload();
   },[]);
+
+  // Manual refresh of exchange rates — bypasses the hourly cooldown
+  const handleRefreshRates=useCallback(async()=>{
+    try{
+      haptic();
+      const liveRates=await fetchLiveRates();
+      const mergedRates={...settings.exchangeRates,...liveRates};
+      setSettings({...settings,exchangeRates:mergedRates,lastRateUpdate:Date.now()});
+    }catch(e){
+      console.error("Rate refresh failed:",e);
+      alert("Could not fetch rates. Check your connection and try again.");
+    }
+  },[settings]);
 
   const t=useMemo(()=>mkTheme(settings.darkMode),[settings.darkMode]);
 
@@ -1598,7 +1761,7 @@ function App(){
         {tab==="home"&&<HomeScreen accounts={accounts} transactions={transactions} categories={categories} fixedExpenses={fixedExpenses} settings={settings} onSettingsChange={setSettings} onAddTxn={(mode)=>{setAddMode(mode);setAddModal(true);}} t={t} onTxnClick={setSelTxn}/>}
         {tab==="analytics"&&<AnalyticsScreen transactions={transactions} categories={categories} settings={settings} t={t}/>}
         {tab==="history"&&<HistoryScreen transactions={transactions} accounts={accounts} categories={categories} settings={settings} onTxnClick={setSelTxn} t={t}/>}
-        {tab==="settings"&&<SettingsScreen accounts={accounts} categories={categories} fixedExpenses={fixedExpenses} settings={settings} onSettingsChange={setSettings} onAccountsChange={setAccounts} onCategoriesChange={setCategories} onFixedChange={setFixed} onReset={handleReset} t={t}/>}
+        {tab==="settings"&&<SettingsScreen accounts={accounts} categories={categories} fixedExpenses={fixedExpenses} settings={settings} onSettingsChange={setSettings} onAccountsChange={setAccounts} onCategoriesChange={setCategories} onFixedChange={setFixed} onReset={handleReset} onRefreshRates={handleRefreshRates} t={t}/>}
       </div>
       <div style={{flexShrink:0,display:"flex",alignItems:"center",background:t.tabBg,borderTop:`1px solid ${t.tabBorder}`,padding:"6px 0 calc(10px + env(safe-area-inset-bottom, 0px))",zIndex:50}}>
         {TABS.map(({k,icon,label})=>{
