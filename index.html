@@ -188,16 +188,28 @@ const categoryMatchesMode=(cat,mode)=>{
   const type=cat.type||(/salary|income|loan|freelance/i.test(cat.name)?"income":"expense");
   return type===mode;
 };
-const DEF_ACCOUNTS=[
-  {id:"acc1",name:"Freedom Bank",type:"bank",currency:"KZT",balance:0,icon:"🏦",color:"#3b82f6",isActive:true},
-  {id:"acc2",name:"Kaspi",type:"bank",currency:"KZT",balance:0,icon:"💳",color:"#ef4444",isActive:true},
-  {id:"acc3",name:"Binance",type:"crypto",currency:"USDT",balance:0,icon:"₿",color:"#f59e0b",isActive:true},
-  {id:"acc4",name:"Redot Pay",type:"crypto",currency:"USDT",balance:0,icon:"💎",color:"#8b5cf6",isActive:true},
+// Bank and crypto presets offered during onboarding
+const BANK_PRESETS=[
+  {name:"Freedom Bank",icon:"🏦",color:"#3b82f6"},
+  {name:"Kaspi",icon:"💳",color:"#ef4444"},
+  {name:"Halyk Bank",icon:"🏛️",color:"#10b981"},
+  {name:"Jusan Bank",icon:"🏦",color:"#f59e0b"},
+  {name:"Forte Bank",icon:"🏦",color:"#8b5cf6"},
+  {name:"Bereke Bank",icon:"🏦",color:"#06b6d4"},
 ];
+const CRYPTO_PRESETS=[
+  {name:"Binance",icon:"₿",color:"#f59e0b"},
+  {name:"Redot Pay",icon:"💎",color:"#8b5cf6"},
+  {name:"Bybit",icon:"🪙",color:"#ffd700"},
+  {name:"OKX",icon:"⚡",color:"#3b82f6"},
+  {name:"MetaMask",icon:"🦊",color:"#f97316"},
+  {name:"Trust Wallet",icon:"🛡️",color:"#10b981"},
+];
+const DEF_ACCOUNTS=[];
 const DEF_FIXED=[];
 const DEF_SETTINGS={
   darkMode:true,
-  displayName:"Beka",
+  displayName:"",
   profilePicture:null,
   activeCurrencies:["KZT","USD","EUR","USDT"],
   selectedCurrency:"KZT",
@@ -207,6 +219,7 @@ const DEF_SETTINGS={
   aiTone:"humorous",
   aiLanguage:"English",
   aiCustomPrompt:"",
+  onboarded:false,
   exchangeRates:{KZT:1,USD:520,EUR:560,USDT:520}
 };
 const mkSampleTxns=()=>{
@@ -1110,6 +1123,275 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
   );
 }
 
+// ── ONBOARDING ──
+// Walks new users through setup: name, banks, crypto, pet, currency.
+// Runs on first launch; skipped thereafter.
+function OnboardingScreen({tgUser,onComplete}){
+  const[step,setStep]=useState(0);
+  const[name,setName]=useState(tgUser?.first_name||"");
+  const[profilePic,setProfilePic]=useState(tgUser?.photo_url||null);
+  const[selectedBanks,setSelectedBanks]=useState([]);
+  const[selectedCrypto,setSelectedCrypto]=useState([]);
+  const[customBankName,setCustomBankName]=useState("");
+  const[customCryptoName,setCustomCryptoName]=useState("");
+  const[pet,setPet]=useState("dog");
+  const[currency,setCurrency]=useState("KZT");
+
+  const toggleBank=(bankName)=>setSelectedBanks(s=>s.includes(bankName)?s.filter(x=>x!==bankName):[...s,bankName]);
+  const toggleCrypto=(c)=>setSelectedCrypto(s=>s.includes(c)?s.filter(x=>x!==c):[...s,c]);
+
+  const addCustomBank=()=>{
+    const n=customBankName.trim();
+    if(!n)return;
+    if(!selectedBanks.includes(n))setSelectedBanks([...selectedBanks,n]);
+    setCustomBankName("");
+  };
+  const addCustomCrypto=()=>{
+    const n=customCryptoName.trim();
+    if(!n)return;
+    if(!selectedCrypto.includes(n))setSelectedCrypto([...selectedCrypto,n]);
+    setCustomCryptoName("");
+  };
+
+  const canAdvance=()=>{
+    if(step===0)return name.trim().length>0;
+    return true;
+  };
+
+  const finish=()=>{
+    // Build account list from selections
+    const accounts=[];
+    selectedBanks.forEach(bankName=>{
+      const preset=BANK_PRESETS.find(b=>b.name===bankName);
+      accounts.push({
+        id:uid(),
+        name:bankName,
+        type:"bank",
+        currency:currency,
+        balance:0,
+        icon:preset?.icon||"🏦",
+        color:preset?.color||"#3b82f6",
+        isActive:true
+      });
+    });
+    selectedCrypto.forEach(cryptoName=>{
+      const preset=CRYPTO_PRESETS.find(c=>c.name===cryptoName);
+      accounts.push({
+        id:uid(),
+        name:cryptoName,
+        type:"crypto",
+        currency:"USDT",
+        balance:0,
+        icon:preset?.icon||"💰",
+        color:preset?.color||"#f59e0b",
+        isActive:true
+      });
+    });
+    onComplete({
+      displayName:name.trim(),
+      profilePicture:profilePic,
+      aiPet:pet,
+      selectedCurrency:currency,
+      accounts
+    });
+  };
+
+  const STEPS=["Welcome","Banks","Crypto","Companion","Currency"];
+
+  const containerStyle={
+    height:"100vh",
+    display:"flex",
+    flexDirection:"column",
+    background:"linear-gradient(160deg,#0a0f1e,#0f2027,#0a0f1e)",
+    color:"#e2e8f0",
+    padding:"calc(env(safe-area-inset-top, 20px) + 40px) 20px calc(20px + env(safe-area-inset-bottom, 0px))",
+    overflow:"auto"
+  };
+  const headerStyle={textAlign:"center",marginBottom:24};
+  const titleStyle={fontSize:26,fontWeight:700,marginBottom:8};
+  const subtitleStyle={fontSize:14,color:"#94a3b8",lineHeight:1.5};
+  const chipBase={padding:"10px 14px",borderRadius:12,border:`1.5px solid #1e2d3d`,background:"#111827",cursor:"pointer",fontSize:14,color:"#e2e8f0",transition:"all .15s"};
+  const chipActive={borderColor:"#10b981",background:"#10b98122",color:"#10b981"};
+  const inputStyle={width:"100%",background:"#1e2d3d",color:"#e2e8f0",border:"1px solid #1e2d3d",borderRadius:12,padding:"14px 16px",fontSize:16,fontFamily:"system-ui,sans-serif"};
+  const primaryBtn={width:"100%",background:"#10b981",color:"#fff",border:"none",borderRadius:12,padding:"14px",fontSize:16,fontWeight:600,cursor:"pointer",marginTop:20,opacity:canAdvance()?1:0.5};
+
+  return(
+    <div style={containerStyle}>
+      {/* Progress dots */}
+      <div style={{display:"flex",justifyContent:"center",gap:8,marginBottom:32}}>
+        {STEPS.map((_,i)=>(
+          <div key={i} style={{width:i===step?24:8,height:8,borderRadius:4,background:i<=step?"#10b981":"#1e2d3d",transition:"all .2s"}}/>
+        ))}
+      </div>
+
+      <div style={{flex:1,maxWidth:400,margin:"0 auto",width:"100%"}}>
+        {/* Step 0: Welcome + Name */}
+        {step===0&&(
+          <div>
+            <div style={headerStyle}>
+              <div style={{fontSize:64,marginBottom:16}}>💰</div>
+              <div style={titleStyle}>Welcome to Finance Tracker!</div>
+              <div style={subtitleStyle}>Let's set things up. This takes about 30 seconds.</div>
+            </div>
+            {profilePic&&(
+              <div style={{textAlign:"center",marginBottom:20}}>
+                <img src={profilePic} style={{width:72,height:72,borderRadius:"50%",objectFit:"cover",border:"2px solid #10b981"}} alt="profile"/>
+              </div>
+            )}
+            <div style={{fontSize:13,color:"#94a3b8",marginBottom:6}}>What should we call you?</div>
+            <input value={name} onChange={e=>setName(e.target.value)} placeholder="Your name" style={inputStyle} autoFocus/>
+          </div>
+        )}
+
+        {/* Step 1: Banks */}
+        {step===1&&(
+          <div>
+            <div style={headerStyle}>
+              <div style={{fontSize:48,marginBottom:12}}>🏦</div>
+              <div style={titleStyle}>Your Banks</div>
+              <div style={subtitleStyle}>Select the banks you use. You can add more later.</div>
+            </div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:16}}>
+              {BANK_PRESETS.map(bank=>{
+                const active=selectedBanks.includes(bank.name);
+                return(
+                  <div key={bank.name} onClick={()=>toggleBank(bank.name)} style={{...chipBase,...(active?chipActive:{}),display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:18}}>{bank.icon}</span>
+                    <span>{bank.name}</span>
+                    {active&&<span style={{fontSize:11,color:"#10b981"}}>✓</span>}
+                  </div>
+                );
+              })}
+            </div>
+            {/* Custom ones already added */}
+            {selectedBanks.filter(b=>!BANK_PRESETS.find(p=>p.name===b)).map(n=>(
+              <div key={n} style={{...chipBase,...chipActive,display:"inline-flex",alignItems:"center",gap:8,marginRight:8,marginBottom:8}}>
+                🏦 {n}
+                <span onClick={()=>toggleBank(n)} style={{cursor:"pointer",color:"#ef4444"}}>✕</span>
+              </div>
+            ))}
+            <div style={{fontSize:13,color:"#94a3b8",marginTop:16,marginBottom:6}}>Add a custom bank</div>
+            <div style={{display:"flex",gap:8}}>
+              <input value={customBankName} onChange={e=>setCustomBankName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addCustomBank()} placeholder="Bank name" style={{...inputStyle,flex:1}}/>
+              <button onClick={addCustomBank} style={{background:"#10b981",color:"#fff",border:"none",borderRadius:12,padding:"0 20px",fontSize:20,fontWeight:700,cursor:"pointer",flexShrink:0}}>+</button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 2: Crypto */}
+        {step===2&&(
+          <div>
+            <div style={headerStyle}>
+              <div style={{fontSize:48,marginBottom:12}}>₿</div>
+              <div style={titleStyle}>Crypto Wallets</div>
+              <div style={subtitleStyle}>Any crypto accounts? Skip if none.</div>
+            </div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:16}}>
+              {CRYPTO_PRESETS.map(c=>{
+                const active=selectedCrypto.includes(c.name);
+                return(
+                  <div key={c.name} onClick={()=>toggleCrypto(c.name)} style={{...chipBase,...(active?chipActive:{}),display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:18}}>{c.icon}</span>
+                    <span>{c.name}</span>
+                    {active&&<span style={{fontSize:11,color:"#10b981"}}>✓</span>}
+                  </div>
+                );
+              })}
+            </div>
+            {selectedCrypto.filter(c=>!CRYPTO_PRESETS.find(p=>p.name===c)).map(n=>(
+              <div key={n} style={{...chipBase,...chipActive,display:"inline-flex",alignItems:"center",gap:8,marginRight:8,marginBottom:8}}>
+                💰 {n}
+                <span onClick={()=>toggleCrypto(n)} style={{cursor:"pointer",color:"#ef4444"}}>✕</span>
+              </div>
+            ))}
+            <div style={{fontSize:13,color:"#94a3b8",marginTop:16,marginBottom:6}}>Add a custom wallet</div>
+            <div style={{display:"flex",gap:8}}>
+              <input value={customCryptoName} onChange={e=>setCustomCryptoName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addCustomCrypto()} placeholder="Wallet name" style={{...inputStyle,flex:1}}/>
+              <button onClick={addCustomCrypto} style={{background:"#10b981",color:"#fff",border:"none",borderRadius:12,padding:"0 20px",fontSize:20,fontWeight:700,cursor:"pointer",flexShrink:0}}>+</button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 3: Pet */}
+        {step===3&&(
+          <div>
+            <div style={headerStyle}>
+              <div style={{fontSize:48,marginBottom:12}}>🤖</div>
+              <div style={titleStyle}>Pick Your AI Companion</div>
+              <div style={subtitleStyle}>They'll react to every transaction you log. Pick a vibe.</div>
+            </div>
+            <div style={{display:"flex",gap:12}}>
+              {[
+                {k:"dog",emoji:"🐶",label:"Dog",desc:"Loyal, enthusiastic, supportive"},
+                {k:"cat",emoji:"🐱",label:"Cat",desc:"Sassy, judgmental, dryly funny"}
+              ].map(({k,emoji,label,desc})=>{
+                const active=pet===k;
+                return(
+                  <div key={k} onClick={()=>setPet(k)} style={{flex:1,padding:"24px 14px",borderRadius:16,border:`2px solid ${active?"#10b981":"#1e2d3d"}`,background:active?"#10b98122":"#111827",cursor:"pointer",textAlign:"center",transition:"all .15s"}}>
+                    <div style={{fontSize:64,marginBottom:10}}>{emoji}</div>
+                    <div style={{fontSize:18,fontWeight:600,color:active?"#10b981":"#e2e8f0",marginBottom:6}}>{label}</div>
+                    <div style={{fontSize:12,color:"#94a3b8",lineHeight:1.4}}>{desc}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Step 4: Currency */}
+        {step===4&&(
+          <div>
+            <div style={headerStyle}>
+              <div style={{fontSize:48,marginBottom:12}}>💱</div>
+              <div style={titleStyle}>Default Currency</div>
+              <div style={subtitleStyle}>What currency do you mostly use? You can switch any time.</div>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {[
+                {k:"KZT",label:"Tenge",sym:"₸"},
+                {k:"USD",label:"US Dollar",sym:"$"},
+                {k:"EUR",label:"Euro",sym:"€"},
+                {k:"USDT",label:"Tether (Crypto)",sym:"₮"}
+              ].map(({k,label,sym})=>{
+                const active=currency===k;
+                return(
+                  <div key={k} onClick={()=>setCurrency(k)} style={{padding:"16px 18px",borderRadius:12,border:`1.5px solid ${active?"#10b981":"#1e2d3d"}`,background:active?"#10b98122":"#111827",cursor:"pointer",display:"flex",alignItems:"center",gap:12}}>
+                    <span style={{fontSize:24,fontWeight:700,color:active?"#10b981":"#94a3b8",minWidth:32}}>{sym}</span>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:15,fontWeight:600,color:active?"#10b981":"#e2e8f0"}}>{k}</div>
+                      <div style={{fontSize:12,color:"#94a3b8"}}>{label}</div>
+                    </div>
+                    {active&&<span style={{color:"#10b981",fontSize:20}}>✓</span>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Nav buttons */}
+      <div style={{maxWidth:400,margin:"0 auto",width:"100%",marginTop:20}}>
+        {step===STEPS.length-1?(
+          <button onClick={finish} style={primaryBtn}>Start Tracking 🚀</button>
+        ):(
+          <button disabled={!canAdvance()} onClick={()=>setStep(step+1)} style={primaryBtn}>Continue</button>
+        )}
+        {step>0&&(
+          <button onClick={()=>setStep(step-1)} style={{width:"100%",background:"transparent",color:"#94a3b8",border:"none",borderRadius:12,padding:"10px",fontSize:14,cursor:"pointer",marginTop:8}}>
+            ← Back
+          </button>
+        )}
+        {(step===1||step===2)&&(
+          <button onClick={()=>setStep(step+1)} style={{width:"100%",background:"transparent",color:"#64748b",border:"none",borderRadius:12,padding:"6px",fontSize:13,cursor:"pointer"}}>
+            Skip
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── MAIN APP ──
 function App(){
   const[loaded,setLoaded]=useState(false);
@@ -1170,6 +1452,13 @@ function App(){
           if(!txns||txns.length===0)txns=LS.get("ft_transactions",[]);
           // Merge with default settings so new fields (like aiPet) always have a value
           sets={...DEF_SETTINGS,...sets};
+          // Existing users from before onboarding existed: if they have a displayName
+          // or any accounts, treat them as already onboarded (don't force flow on them)
+          if(sets.onboarded===undefined||sets.onboarded===false){
+            if((accs&&accs.length>0)||(sets.displayName&&sets.displayName.length>0)){
+              sets.onboarded=true;
+            }
+          }
           // One-time migration: if CloudStorage is available but hasn't been populated yet,
           // push everything from localStorage up to the cloud (fire and forget)
           if(CS_AVAILABLE&&!LS.get("ft_cs_migrated",false)){
@@ -1264,6 +1553,21 @@ function App(){
 
   const t=useMemo(()=>mkTheme(settings.darkMode),[settings.darkMode]);
 
+  // Handle onboarding completion: save user's setup to settings + accounts
+  const handleOnboardingComplete=useCallback((data)=>{
+    const newSettings={...settings,
+      displayName:data.displayName,
+      profilePicture:data.profilePicture,
+      aiPet:data.aiPet,
+      selectedCurrency:data.selectedCurrency,
+      onboarded:true
+    };
+    setSettings(newSettings);
+    if(data.accounts&&data.accounts.length>0){
+      setAccounts(data.accounts);
+    }
+  },[settings]);
+
   if(!loaded){
     return(
       <div style={{height:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"#0a0f1e"}}>
@@ -1272,6 +1576,12 @@ function App(){
         <div style={{fontSize:14,color:"#64748b",marginTop:8}}>Loading your data...</div>
       </div>
     );
+  }
+
+  // Show onboarding if user hasn't completed setup yet
+  if(!settings.onboarded){
+    const tgUser=window.Telegram?.WebApp?.initDataUnsafe?.user;
+    return <OnboardingScreen tgUser={tgUser} onComplete={handleOnboardingComplete}/>;
   }
 
   const TABS=[
