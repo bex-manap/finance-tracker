@@ -222,7 +222,7 @@ const DEF_SETTINGS={
   balanceHidden:false,
   aiEnabled:true,
   aiPet:"dog",
-  aiTone:"humorous",
+  aiTone:"medium",
   aiLanguage:"English",
   aiCustomPrompt:"",
   onboarded:false,
@@ -373,23 +373,24 @@ const PETS={
   dog:{
     emoji:"🐶",
     name:"dog",
-    persona:"You are a loyal, enthusiastic dog giving your human financial advice. Be friendly, supportive, and a bit playful — wag metaphorically, use occasional dog expressions like 'woof!' or reference fetching, tails, and treats. Celebrate wins like you just got a treat. Gently call out bad spending like a concerned pup but never scold harshly."
+    persona:"You are a loyal, enthusiastic dog giving your human financial advice. Be friendly, supportive, and a bit playful. Celebrate wins warmly. Gently call out bad spending like a concerned friend who genuinely cares. IMPORTANT: Do NOT use dog noises or expressions like 'woof', 'bark', 'arf', or refer to wagging tails, fetching, treats, or other dog clichés. Just be warm and direct."
   },
   cat:{
     emoji:"🐱",
     name:"cat",
-    persona:"You are a judgmental, sassy cat giving your human financial advice. Be aloof, sarcastic, and slightly dismissive — roll your eyes metaphorically, use occasional cat expressions like 'purr', 'hiss', reference knocking things off tables, naps, or tuna. Mock bad spending but secretly care. Be the wise, slightly annoyed cat they need."
+    persona:"You are a judgmental, sassy cat giving your human financial advice. Be aloof, sarcastic, and slightly dismissive. Mock bad spending but secretly care. IMPORTANT: Do NOT use cat noises or expressions like 'purr', 'meow', 'hiss', and do NOT reference knocking things off tables, naps, tuna, or other cat clichés. Just be dryly witty and a bit superior."
   }
 };
 
 const getAIComment=async(type,amount,currency,category,subcategory,note,settings)=>{
   if(!settings.aiEnabled)return null;
   const toneMap={
-    humorous:"direct and slightly humorous, use relatable comparisons and light wit",
-    encouraging:"encouraging and positive, focus on the good choices",
-    neutral:"neutral and professional, be concise and factual"
+    soft:"gentle, warm, and encouraging — like a supportive friend cheering them on. Focus on positives even when the spending was questionable. Never make them feel bad",
+    medium:"direct and lightly humorous — give an honest take with relatable comparisons. Comment on whether the purchase makes sense without being mean about it",
+    harsh:"blunt, sarcastic, and brutally honest — call out wasteful spending directly. Be witty but cutting. Don't sugarcoat. Make them think twice next time",
+    explicit:"completely uncensored, profane, and savage — use heavy profanity freely (fuck, shit, damn, hell, ass, dumbass, etc). Roast their spending choice HARD with creative, cutting insults specifically about the purchase decision. Be the friend who tells them their financial choices are stupid in the bluntest, funniest way possible. Mock the specific item, the amount, the timing — get creative and brutal. The goal is to make them laugh AND seriously reconsider next time. Stay focused on the SPENDING DECISION — never attack them as a person, their appearance, their relationships, or anything personal. Money choices only. Make it sting in a way that's funny enough to share."
   };
-  const tone=toneMap[settings.aiTone]||toneMap.humorous;
+  const tone=toneMap[settings.aiTone]||toneMap.medium;
   const customExtra=settings.aiCustomPrompt?` ${settings.aiCustomPrompt}`:"";
   const lang=settings.aiLanguage||"English";
   const pet=PETS[settings.aiPet]||PETS.dog;
@@ -1203,7 +1204,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
             </div>
           </div>
           {[
-            {l:"Tone",k:"aiTone",opts:[{v:"humorous",l:"Humorous & Direct"},{v:"encouraging",l:"Encouraging"},{v:"neutral",l:"Neutral & Professional"}]},
+            {l:"Tone",k:"aiTone",opts:[{v:"soft",l:"😇 Soft — Gentle & encouraging"},{v:"medium",l:"😏 Medium — Direct & witty"},{v:"harsh",l:"😈 Harsh — Brutally honest"},{v:"explicit",l:"🔞 18+ — Unfiltered & profane"}]},
             {l:"Language",k:"aiLanguage",opts:[{v:"English",l:"English"},{v:"Russian",l:"Russian"},{v:"Kazakh",l:"Kazakh"}]},
           ].map(({l,k,opts})=>(
             <div key={k}>
