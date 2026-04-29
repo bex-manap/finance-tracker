@@ -151,6 +151,8 @@ const toKZT=(a,c,r)=>c==="KZT"?a:a*(r[c]||1);
 const fromKZT=(a,c,r)=>c==="KZT"?a:a/(r[c]||1);
 const sameMonth=(d,y,m)=>{const dt=new Date(d);return dt.getFullYear()===y&&dt.getMonth()===m;};
 const sameDay=(d,y,m,day)=>{const dt=new Date(d);return dt.getFullYear()===y&&dt.getMonth()===m&&dt.getDate()===day;};
+// Format ISO date string into HH:MM 24-hour clock for display in transaction lists
+const fmtTime=(d)=>{const dt=new Date(d);return`${String(dt.getHours()).padStart(2,"0")}:${String(dt.getMinutes()).padStart(2,"0")}`;};
 const haptic=(t="medium")=>{try{tg?.HapticFeedback?.impactOccurred(t);}catch{}};
 
 // ── QUOTES ──
@@ -516,6 +518,11 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
   const[subcategoryId,setSubcategoryId]=useState("");
   const[note,setNote]=useState("");
   const[date,setDate]=useState(new Date().toISOString().split("T")[0]);
+  // Time of transaction (HH:MM format), defaults to current local time
+  const[time,setTime]=useState(()=>{
+    const d=new Date();
+    return`${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+  });
   const[loading,setLoading]=useState(false);
 
   // The currently selected "from" account determines which currencies can be used
@@ -533,6 +540,10 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
     if(open){
       setMode(initMode||"expense");
       setAmount("");setNote("");setCategoryId("");setSubcategoryId("");
+      // Reset date and time to "now" each time the modal opens
+      const now=new Date();
+      setDate(now.toISOString().split("T")[0]);
+      setTime(`${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`);
       // Default currency = selected account's native currency
       const acc=accounts.find(a=>a.id===accountId);
       if(acc)setCurrency(acc.currency);
@@ -570,7 +581,7 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
       id:uid(),type:mode,amount:+amount,currency:txnCurrency,
       accountId,toAccountId:mode==="transfer"?toAccountId:null,
       categoryId:categoryId||null,subcategoryId:subcategoryId||null,
-      note,date:new Date(date).toISOString(),aiComment:null,
+      note,date:new Date(`${date}T${time||"00:00"}`).toISOString(),aiComment:null,
       // For transfers, also store the converted destination amount
       toAmount:mode==="transfer"&&transferConverted?transferConverted.amount:null,
       toCurrency:mode==="transfer"&&transferConverted?transferConverted.currency:null
@@ -648,9 +659,15 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
             </select>
           </div>
         )}
-        <div>
-          <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>Date</div>
-          <input value={date} onChange={e=>setDate(e.target.value)} type="date" style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"11px 14px",fontSize:15}}/>
+        <div style={{display:"flex",gap:10}}>
+          <div style={{flex:"1 1 0",minWidth:0}}>
+            <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>Date</div>
+            <input value={date} onChange={e=>setDate(e.target.value)} type="date" style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"11px 14px",fontSize:15}}/>
+          </div>
+          <div style={{flex:"0 0 110px"}}>
+            <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>Time</div>
+            <input value={time} onChange={e=>setTime(e.target.value)} type="time" style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"11px 14px",fontSize:15}}/>
+          </div>
         </div>
         <div>
           <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>Note</div>
@@ -681,7 +698,7 @@ function TxnDetail({txn,open,onClose,accounts,categories,onDelete,settings,t}){
     {l:"Account",v:`${acc?.icon||""} ${acc?.name||"Unknown"}`},
     toAcc?{l:"To Account",v:`${toAcc.icon} ${toAcc.name}`}:null,
     {l:"Type",v:txn.type.charAt(0).toUpperCase()+txn.type.slice(1)},
-    {l:"Date",v:new Date(txn.date).toLocaleDateString("en-US",{weekday:"short",year:"numeric",month:"short",day:"numeric"})},
+    {l:"Date",v:`${new Date(txn.date).toLocaleDateString("en-US",{weekday:"short",year:"numeric",month:"short",day:"numeric"})} · ${fmtTime(txn.date)}`},
     txn.note?{l:"Note",v:txn.note}:null,
   ].filter(Boolean);
   return(
@@ -848,7 +865,7 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,settings,onS
                       <div style={{width:38,height:38,borderRadius:10,background:(cat?.color||"#64748b")+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{txn.type==="transfer"?"⇄":cat?.icon||"💸"}</div>
                       <div>
                         <div style={{fontSize:14,fontWeight:500,color:t.text}}>{txn.type==="transfer"?"Transfer":cat?.name||"Unknown"}</div>
-                        <div style={{fontSize:11,color:t.textMuted}}>{acc?.name} · {new Date(txn.date).toLocaleDateString("en-US",{month:"short",day:"numeric"})}</div>
+                        <div style={{fontSize:11,color:t.textMuted}}>{acc?.name} · {new Date(txn.date).toLocaleDateString("en-US",{month:"short",day:"numeric"})} · {fmtTime(txn.date)}</div>
                       </div>
                     </div>
                     <div style={{fontSize:16,fontWeight:700,color,fontFamily:"monospace"}}>{sign}{fmtAmt(txn.amount,txn.currency)}</div>
@@ -1024,7 +1041,7 @@ function HistoryScreen({transactions,accounts,categories,settings,onTxnClick,t})
                         <div style={{width:34,height:34,borderRadius:9,background:(cat?.color||"#64748b")+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>{txn.type==="transfer"?"⇄":cat?.icon||"💸"}</div>
                         <div>
                           <div style={{fontSize:14,fontWeight:500,color:t.text}}>{txn.type==="transfer"?"Transfer":(sub?sub.name:cat?.name)||"Unknown"}</div>
-                          <div style={{fontSize:11,color:t.textMuted}}>{acc?.name}{txn.note?` · ${txn.note.slice(0,22)}${txn.note.length>22?"…":""}`:""}</div>
+                          <div style={{fontSize:11,color:t.textMuted}}>{fmtTime(txn.date)} · {acc?.name}{txn.note?` · ${txn.note.slice(0,22)}${txn.note.length>22?"…":""}`:""}</div>
                         </div>
                       </div>
                       <div style={{fontSize:15,fontWeight:700,color,fontFamily:"monospace"}}>{sign}{fmtAmt(txn.amount,txn.currency)}</div>
