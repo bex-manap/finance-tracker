@@ -659,14 +659,14 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
             </select>
           </div>
         )}
-        <div style={{display:"flex",gap:10}}>
-          <div style={{flex:"3 1 0",minWidth:0}}>
+        <div style={{display:"flex",gap:10,width:"100%"}}>
+          <div style={{flex:"3 1 0",minWidth:0,overflow:"hidden"}}>
             <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>Date</div>
-            <input value={date} onChange={e=>setDate(e.target.value)} type="date" style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"11px 12px",fontSize:14,boxSizing:"border-box",textAlign:"center"}}/>
+            <input value={date} onChange={e=>setDate(e.target.value)} type="date" style={{width:"100%",maxWidth:"100%",display:"block",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"11px 8px",fontSize:13,boxSizing:"border-box",textAlign:"center",WebkitAppearance:"none"}}/>
           </div>
-          <div style={{flex:"2 1 0",minWidth:0}}>
+          <div style={{flex:"2 1 0",minWidth:0,overflow:"hidden"}}>
             <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>Time</div>
-            <input value={time} onChange={e=>setTime(e.target.value)} type="time" style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"11px 12px",fontSize:14,boxSizing:"border-box",textAlign:"center"}}/>
+            <input value={time} onChange={e=>setTime(e.target.value)} type="time" style={{width:"100%",maxWidth:"100%",display:"block",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"11px 8px",fontSize:13,boxSizing:"border-box",textAlign:"center",WebkitAppearance:"none"}}/>
           </div>
         </div>
         <div>
