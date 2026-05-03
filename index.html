@@ -401,7 +401,37 @@ const getAIComment=async(type,amount,currency,category,subcategory,note,settings
     ?`just received ${fmtFull(amount,currency)} as income from ${subcategory||category||"unspecified source"}`
     :`just spent ${fmtFull(amount,currency)} on ${subcategory||category||"something"}`;
 
-  const systemPrompt=`${pet.persona} You live in their budgeting app and comment briefly on their financial actions. Tone style: ${tone}. Use relatable comparisons when relevant (e.g., "that's X coffees" or "X days of groceries").${customExtra} Keep it to 1-2 sentences MAX. Respond in ${lang}. No preamble, no emoji overload (pet emojis are added by the app separately), just the comment directly in character.`;
+  // Real price reference points for Kazakhstan (Astana/Almaty, 2026) so the AI can make
+  // accurate, relatable comparisons. Without these, the model defaults to US prices and
+  // says nonsense like "1000 KZT = 2 weeks of groceries". Anchored in KZT, with USD/USDT
+  // rough equivalents the AI can derive from at ~520 KZT/USD.
+  const kzPriceContext=`PRICE REFERENCE POINTS for Kazakhstan (use these for accurate comparisons):
+- Coffee at a cafe: 1,500-2,500 KZT
+- Bottle of water/soda: 200-500 KZT
+- Bus/metro ride: 100-200 KZT
+- Quick takeaway lunch (kebab, plov, samsa): 1,500-3,000 KZT
+- Restaurant dinner for one: 5,000-10,000 KZT
+- Fancy restaurant dinner for one: 15,000-30,000 KZT
+- Weekly groceries for one person: 25,000-40,000 KZT
+- Monthly groceries for one person: 100,000-150,000 KZT
+- Movie ticket: 2,500-4,000 KZT
+- Gym membership/month: 15,000-30,000 KZT
+- Apartment rent (1-bedroom, Astana): 200,000-350,000 KZT/month
+- Average monthly salary: 350,000-500,000 KZT
+- Taxi across city: 1,500-3,000 KZT
+- iPhone (latest): 700,000-900,000 KZT
+- Domestic flight: 30,000-60,000 KZT
+- Tank of gas: 15,000-25,000 KZT
+For USD/USDT: roughly divide KZT amounts by 520 (so $1 ≈ 520 KZT).
+Use ONLY benchmarks that fit naturally — don't list multiple comparisons.`;
+
+  const systemPrompt=`${pet.persona} You live in their budgeting app and comment briefly on their financial actions. Tone style: ${tone}.
+
+${kzPriceContext}
+
+When making "that's X cups of coffee" type comparisons, use the price points above and ROUND sensibly. For small amounts (under 500 KZT), don't compare to groceries or rent — pick something that actually costs that much (a soda, a bus ride). Match the comparison to the actual size of the expense.${customExtra}
+
+Keep it to 1-2 sentences MAX. Respond in ${lang}. No preamble, no emoji overload (pet emojis are added by the app separately), just the comment directly in character.`;
 
   const userMsg=`I ${actionDesc}. My note: "${note||"no note"}". Give me your quick take.`;
 
