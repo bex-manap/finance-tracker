@@ -523,23 +523,38 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
     const d=new Date();
     return`${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
   });
+  // Custom exchange rate for transfers — null means "use the auto-fetched rate from settings"
+  const[customRate,setCustomRate]=useState(null);
   const[loading,setLoading]=useState(false);
 
   // The currently selected "from" account determines which currencies can be used
   const selAcc=accounts.find(a=>a.id===accountId);
   const availableCurrencies=selAcc?getAccountCurrencies(selAcc.type):["KZT"];
 
-  // When account changes, if the chosen currency isn't valid for that account type, reset to the account's default
+  // When the From account changes, if the chosen currency isn't valid for that account type, reset to the account's default
   useEffect(()=>{
     if(selAcc&&!availableCurrencies.includes(currency)){
       setCurrency(selAcc.currency||availableCurrencies[0]);
     }
   },[accountId]);
 
+  // CRITICAL FIX: When the From account changes, ensure the To account is different.
+  // Without this, the To dropdown filters out the new From account but the underlying
+  // toAccountId state can still point to it, causing "transfer to same account" bugs.
+  useEffect(()=>{
+    if(toAccountId===accountId||!accounts.find(a=>a.id===toAccountId)){
+      const firstOther=accounts.find(a=>a.id!==accountId);
+      if(firstOther)setToAccountId(firstOther.id);
+    }
+    // Reset custom rate when accounts change so live rate is used by default
+    setCustomRate(null);
+  },[accountId,accounts]);
+
   useEffect(()=>{
     if(open){
       setMode(initMode||"expense");
       setAmount("");setNote("");setCategoryId("");setSubcategoryId("");
+      setCustomRate(null);
       // Reset date and time to "now" each time the modal opens
       const now=new Date();
       setDate(now.toISOString().split("T")[0]);
@@ -558,33 +573,46 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
     setSubcategoryId("");
   };
 
-  // For transfers: compute how much the destination account will receive based on exchange rates
+  // For transfers: compute how much the destination account will receive.
+  // Default uses the live exchange rate, but customRate (if set) overrides it.
+  // The rate represents "1 source-currency unit = X destination-currency units".
   const toAcc=accounts.find(a=>a.id===toAccountId);
+  const autoRate=useMemo(()=>{
+    if(!selAcc||!toAcc)return 1;
+    if(selAcc.currency===toAcc.currency)return 1;
+    const rates=settings.exchangeRates||{};
+    // Cross-rate via KZT: 1 source = X KZT = X / dest_rate destination units
+    return(rates[selAcc.currency]||1)/(rates[toAcc.currency]||1);
+  },[selAcc,toAcc,settings.exchangeRates]);
+  const effectiveRate=customRate!=null?+customRate:autoRate;
   const transferConverted=useMemo(()=>{
     if(mode!=="transfer"||!selAcc||!toAcc||!amount||isNaN(+amount))return null;
-    const rates=settings.exchangeRates||{};
-    // Convert: source currency → KZT → destination currency
-    const kztValue=(+amount)*(rates[selAcc.currency]||1);
-    const destAmount=kztValue/(rates[toAcc.currency]||1);
-    return{amount:destAmount,currency:toAcc.currency};
-  },[mode,selAcc,toAcc,amount,settings.exchangeRates]);
+    return{amount:(+amount)*effectiveRate,currency:toAcc.currency};
+  },[mode,selAcc,toAcc,amount,effectiveRate]);
 
   const handleSave=async()=>{
     if(!amount||isNaN(+amount)||+amount<=0)return;
+    // Safety check: prevent transfer to the same account (would otherwise lose money on screen)
+    if(mode==="transfer"&&accountId===toAccountId){
+      alert("Source and destination accounts must be different.");
+      return;
+    }
     haptic();
     const acc=accounts.find(a=>a.id===accountId);
     // For non-transfers, use the selected transaction currency.
     // For transfers, we record the outgoing amount in the source account's currency
-    // and handle the destination conversion in handleSaveTxn.
+    // and handle the destination conversion via toAmount/toCurrency.
     const txnCurrency=mode==="transfer"?(acc?.currency||"KZT"):currency;
     const txn={
       id:uid(),type:mode,amount:+amount,currency:txnCurrency,
       accountId,toAccountId:mode==="transfer"?toAccountId:null,
       categoryId:categoryId||null,subcategoryId:subcategoryId||null,
       note,date:new Date(`${date}T${time||"00:00"}`).toISOString(),aiComment:null,
-      // For transfers, also store the converted destination amount
+      // For transfers, store the converted destination amount AND the rate used,
+      // so the same conversion is reversed exactly when the transaction is deleted.
       toAmount:mode==="transfer"&&transferConverted?transferConverted.amount:null,
-      toCurrency:mode==="transfer"&&transferConverted?transferConverted.currency:null
+      toCurrency:mode==="transfer"&&transferConverted?transferConverted.currency:null,
+      transferRate:mode==="transfer"?effectiveRate:null
     };
     if((mode==="expense"||mode==="income")&&settings.aiEnabled){
       setLoading(true);
@@ -632,11 +660,36 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
             <select value={toAccountId} onChange={e=>setToAccountId(e.target.value)} style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"11px 14px",fontSize:15,cursor:"pointer"}}>
               {accounts.filter(a=>a.id!==accountId).map(a=><option key={a.id} value={a.id}>{a.icon} {a.name} ({a.currency})</option>)}
             </select>
-            {/* Conversion preview — shown only when source and destination currencies differ */}
-            {transferConverted&&selAcc&&toAcc&&selAcc.currency!==toAcc.currency&&(
-              <div style={{marginTop:8,padding:"10px 12px",background:t.bgCard2,borderRadius:10,fontSize:13,color:t.textMuted,display:"flex",alignItems:"center",gap:8}}>
-                <span>💱</span>
-                <span>≈ <span style={{color:t.text,fontWeight:600,fontFamily:"monospace"}}>{fmtFull(transferConverted.amount,transferConverted.currency)}</span> will arrive</span>
+            {/* Cross-currency: show editable rate field with live default + arrival preview */}
+            {selAcc&&toAcc&&selAcc.currency!==toAcc.currency&&(
+              <div style={{marginTop:10,padding:"12px",background:t.bgCard2,borderRadius:10,display:"flex",flexDirection:"column",gap:10}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                  <span style={{fontSize:12,color:t.textMuted}}>Exchange rate</span>
+                  {customRate!=null&&(
+                    <span onClick={()=>setCustomRate(null)} style={{fontSize:11,color:"#10b981",cursor:"pointer",textDecoration:"underline"}}>Use live rate</span>
+                  )}
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:t.text}}>
+                  <span style={{fontFamily:"monospace",color:t.textMuted}}>1 {selAcc.currency} =</span>
+                  <input
+                    type="number"
+                    step="any"
+                    value={customRate!=null?customRate:autoRate.toFixed(autoRate>=100?2:6)}
+                    onChange={e=>setCustomRate(e.target.value)}
+                    style={{flex:1,minWidth:0,background:t.bgInput,color:t.text,border:`1px solid ${customRate!=null?"#10b981":t.border}`,borderRadius:8,padding:"7px 10px",fontSize:13,fontFamily:"monospace",textAlign:"right"}}
+                  />
+                  <span style={{fontFamily:"monospace",color:t.textMuted}}>{toAcc.currency}</span>
+                </div>
+                <div style={{fontSize:11,color:t.textMuted,fontStyle:"italic"}}>
+                  {customRate!=null?"📝 Using your rate":"🌐 Live rate (tap to override)"}
+                </div>
+                {transferConverted&&(
+                  <div style={{paddingTop:8,borderTop:`1px solid ${t.border}`,display:"flex",alignItems:"center",gap:8,fontSize:13}}>
+                    <span>💱</span>
+                    <span style={{color:t.textMuted}}>Will arrive:</span>
+                    <span style={{color:t.text,fontWeight:600,fontFamily:"monospace",marginLeft:"auto"}}>{fmtFull(transferConverted.amount,transferConverted.currency)}</span>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1063,6 +1116,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
   const[sec,setSec]=useState(null);
   const[editAccId,setEditAccId]=useState(null);
   const[editAccName,setEditAccName]=useState("");
+  const[editAccCurrency,setEditAccCurrency]=useState("");
   const[newAccName,setNewAccName]=useState("");
   const[newAccType,setNewAccType]=useState("bank");
   const[newCatName,setNewCatName]=useState("");
@@ -1121,31 +1175,45 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
       <Section k="accounts" label="Accounts" icon="🏦"/>
       {sec==="accounts"&&(
         <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:8}}>
-          {accounts.map(a=>(
-            <div key={a.id} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 0",borderBottom:`1px solid ${t.border}`}}>
-              <span style={{fontSize:18}}>{a.icon}</span>
-              {editAccId===a.id
-                ?<input value={editAccName} onChange={e=>setEditAccName(e.target.value)} style={{flex:1,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:7,padding:"6px 10px",fontSize:14,fontFamily:"system-ui,sans-serif"}}/>
-                :<span style={{flex:1,fontSize:14,color:t.text}}>{a.name} <span style={{color:t.textMuted}}>({a.currency})</span></span>}
-              {editAccId===a.id?(
-                <>
-                  <button onClick={()=>{onAccountsChange(accounts.map(x=>x.id===a.id?{...x,name:editAccName}:x));setEditAccId(null);}} style={{background:"#10b981",border:"none",borderRadius:6,padding:"5px 10px",color:"#fff",cursor:"pointer",fontSize:12}}>Save</button>
-                  <button onClick={()=>setEditAccId(null)} style={{background:t.bgInput,border:"none",borderRadius:6,padding:"5px 10px",color:t.textMuted,cursor:"pointer",fontSize:12}}>Cancel</button>
-                </>
-              ):(
-                <>
-                  <button onClick={()=>{setEditAccId(a.id);setEditAccName(a.name);}} style={{background:t.bgInput,border:"none",borderRadius:6,padding:"5px 10px",color:t.textMuted,cursor:"pointer",fontSize:12}}>✎</button>
-                  <button onClick={()=>onAccountsChange(accounts.filter(x=>x.id!==a.id))} style={{background:"#ef444422",border:"none",borderRadius:6,padding:"5px 10px",color:"#ef4444",cursor:"pointer",fontSize:12}}>✕</button>
-                </>
-              )}
-            </div>
-          ))}
+          {accounts.map(a=>{
+            const isEditing=editAccId===a.id;
+            const allowedCurrencies=getAccountCurrencies(a.type);
+            return(
+              <div key={a.id} style={{padding:"9px 0",borderBottom:`1px solid ${t.border}`}}>
+                {isEditing?(
+                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{fontSize:18}}>{a.icon}</span>
+                      <input value={editAccName} onChange={e=>setEditAccName(e.target.value)} placeholder="Account name" style={{flex:1,minWidth:0,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:7,padding:"6px 10px",fontSize:14,fontFamily:"system-ui,sans-serif"}}/>
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{fontSize:11,color:t.textMuted,minWidth:60}}>Currency:</span>
+                      <select value={editAccCurrency} onChange={e=>setEditAccCurrency(e.target.value)} style={{flex:1,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:7,padding:"6px 10px",fontSize:13,cursor:"pointer"}}>
+                        {allowedCurrencies.map(c=><option key={c} value={c}>{sym[c]} {c}</option>)}
+                      </select>
+                    </div>
+                    <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+                      <button onClick={()=>{onAccountsChange(accounts.map(x=>x.id===a.id?{...x,name:editAccName,currency:editAccCurrency}:x));setEditAccId(null);}} style={{background:"#10b981",border:"none",borderRadius:6,padding:"5px 12px",color:"#fff",cursor:"pointer",fontSize:12}}>Save</button>
+                      <button onClick={()=>setEditAccId(null)} style={{background:t.bgInput,border:"none",borderRadius:6,padding:"5px 12px",color:t.textMuted,cursor:"pointer",fontSize:12}}>Cancel</button>
+                    </div>
+                  </div>
+                ):(
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:18}}>{a.icon}</span>
+                    <span style={{flex:1,fontSize:14,color:t.text,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.name} <span style={{color:t.textMuted}}>({a.currency})</span></span>
+                    <button onClick={()=>{setEditAccId(a.id);setEditAccName(a.name);setEditAccCurrency(a.currency);}} style={{background:t.bgInput,border:"none",borderRadius:6,padding:"5px 10px",color:t.textMuted,cursor:"pointer",fontSize:12,flexShrink:0}}>✎</button>
+                    <button onClick={()=>{if(confirm(`Delete account "${a.name}"? This will not delete its transactions.`))onAccountsChange(accounts.filter(x=>x.id!==a.id));}} style={{background:"#ef444422",border:"none",borderRadius:6,padding:"5px 10px",color:"#ef4444",cursor:"pointer",fontSize:12,flexShrink:0}}>✕</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
           <div style={{marginTop:10,display:"flex",gap:8}}>
-            <input value={newAccName} onChange={e=>setNewAccName(e.target.value)} placeholder="Name" style={{flex:1,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"8px 10px",fontSize:14,fontFamily:"system-ui,sans-serif"}}/>
-            <select value={newAccType} onChange={e=>setNewAccType(e.target.value)} style={{background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"8px",fontSize:13}}>
+            <input value={newAccName} onChange={e=>setNewAccName(e.target.value)} placeholder="Name" style={{flex:1,minWidth:0,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"8px 10px",fontSize:14,fontFamily:"system-ui,sans-serif"}}/>
+            <select value={newAccType} onChange={e=>setNewAccType(e.target.value)} style={{background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"8px",fontSize:13,flexShrink:0}}>
               <option value="bank">Bank</option><option value="crypto">Crypto</option>
             </select>
-            <button onClick={()=>{if(!newAccName.trim())return;onAccountsChange([...accounts,{id:uid(),name:newAccName.trim(),type:newAccType,currency:newAccType==="crypto"?"USDT":"KZT",balance:0,icon:newAccType==="bank"?"🏦":"💰",color:"#10b981",isActive:true}]);setNewAccName("");}} style={{background:"#10b981",border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",cursor:"pointer",fontSize:16,fontWeight:700}}>+</button>
+            <button onClick={()=>{if(!newAccName.trim())return;onAccountsChange([...accounts,{id:uid(),name:newAccName.trim(),type:newAccType,currency:newAccType==="crypto"?"USDT":"KZT",balance:0,icon:newAccType==="bank"?"🏦":"💰",color:"#10b981",isActive:true}]);setNewAccName("");}} style={{background:"#10b981",border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",cursor:"pointer",fontSize:16,fontWeight:700,flexShrink:0}}>+</button>
           </div>
         </div>
       )}
