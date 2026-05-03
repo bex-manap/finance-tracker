@@ -984,95 +984,198 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,settings,onS
 // ── ANALYTICS SCREEN ──
 function AnalyticsScreen({transactions,categories,settings,t}){
   const now=new Date();
-  const[selYear,setSelYear]=useState(now.getFullYear());
-  const[selMonth,setSelMonth]=useState(now.getMonth());
   const{selectedCurrency,exchangeRates}=settings;
-  const prevMonth=()=>{if(selMonth===0){setSelYear(y=>y-1);setSelMonth(11);}else setSelMonth(m=>m-1);};
-  const nextMonth=()=>{if(selMonth===11){setSelYear(y=>y+1);setSelMonth(0);}else setSelMonth(m=>m+1);};
-  const monthTxns=transactions.filter(tx=>sameMonth(tx.date,selYear,selMonth));
-  const expenses=monthTxns.filter(t=>t.type==="expense");
-  const income=monthTxns.filter(t=>t.type==="income");
-  const totalExp=expenses.reduce((s,t)=>s+toKZT(t.amount,t.currency,exchangeRates),0);
-  const totalInc=income.reduce((s,t)=>s+toKZT(t.amount,t.currency,exchangeRates),0);
-  const pieData=useMemo(()=>{
+
+  // ─ Pie chart filter: independent date range ─
+  // Default: this month so first-time users see something useful immediately.
+  const monthStart=new Date(now.getFullYear(),now.getMonth(),1);
+  const today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  const toDateStr=(d)=>d.toISOString().split("T")[0];
+  const[pieFromDate,setPieFromDate]=useState(toDateStr(monthStart));
+  const[pieToDate,setPieToDate]=useState(toDateStr(today));
+  // Quick-select preset chips for common ranges
+  const applyRangePreset=(presetKey)=>{
+    const t=new Date();
+    let from,to=new Date(t.getFullYear(),t.getMonth(),t.getDate());
+    if(presetKey==="thisMonth")from=new Date(t.getFullYear(),t.getMonth(),1);
+    else if(presetKey==="lastMonth"){from=new Date(t.getFullYear(),t.getMonth()-1,1);to=new Date(t.getFullYear(),t.getMonth(),0);}
+    else if(presetKey==="last30")from=new Date(t.getFullYear(),t.getMonth(),t.getDate()-29);
+    else if(presetKey==="last7")from=new Date(t.getFullYear(),t.getMonth(),t.getDate()-6);
+    else if(presetKey==="thisYear")from=new Date(t.getFullYear(),0,1);
+    setPieFromDate(toDateStr(from));setPieToDate(toDateStr(to));
+  };
+
+  // ─ Calendar (daily heatmap) filter: month-by-month navigation, separate from pie ─
+  const[calYear,setCalYear]=useState(now.getFullYear());
+  const[calMonth,setCalMonth]=useState(now.getMonth());
+  const prevCalMonth=()=>{if(calMonth===0){setCalYear(y=>y-1);setCalMonth(11);}else setCalMonth(m=>m-1);};
+  const nextCalMonth=()=>{if(calMonth===11){setCalYear(y=>y+1);setCalMonth(0);}else setCalMonth(m=>m+1);};
+
+  // ─ Pie chart data: filtered by the independent date range ─
+  const pieRangeData=useMemo(()=>{
+    // End-of-day inclusive range so transactions on the toDate are included
+    const fromTs=new Date(`${pieFromDate}T00:00:00`).getTime();
+    const toTs=new Date(`${pieToDate}T23:59:59`).getTime();
+    const filtered=transactions.filter(tx=>{
+      if(tx.type!=="expense")return false;
+      const ts=new Date(tx.date).getTime();
+      return ts>=fromTs&&ts<=toTs;
+    });
+    const totalKzt=filtered.reduce((s,tx)=>s+toKZT(tx.amount,tx.currency,exchangeRates),0);
+    const incomeKzt=transactions.filter(tx=>{
+      if(tx.type!=="income")return false;
+      const ts=new Date(tx.date).getTime();
+      return ts>=fromTs&&ts<=toTs;
+    }).reduce((s,tx)=>s+toKZT(tx.amount,tx.currency,exchangeRates),0);
     const bycat={};
-    expenses.forEach(t=>{
-      const cat=categories.find(c=>c.id===t.categoryId);
+    filtered.forEach(tx=>{
+      const cat=categories.find(c=>c.id===tx.categoryId);
       const key=cat?.id||"other";
       if(!bycat[key])bycat[key]={name:cat?.name||"Other",icon:cat?.icon||"❓",color:cat?.color||"#64748b",value:0};
-      bycat[key].value+=toKZT(t.amount,t.currency,exchangeRates);
+      bycat[key].value+=toKZT(tx.amount,tx.currency,exchangeRates);
     });
-    return Object.values(bycat).sort((a,b)=>b.value-a.value);
-  },[expenses,categories,exchangeRates]);
-  const daysInMonth=new Date(selYear,selMonth+1,0).getDate();
+    return{
+      slices:Object.values(bycat).sort((a,b)=>b.value-a.value),
+      totalExp:totalKzt,
+      totalInc:incomeKzt,
+      txnCount:filtered.length
+    };
+  },[transactions,categories,exchangeRates,pieFromDate,pieToDate]);
+
+  // ─ Calendar data: per-day expense totals for the selected calendar month ─
+  const daysInMonth=new Date(calYear,calMonth+1,0).getDate();
   const dayTotals=useMemo(()=>{
     const arr=[];
     for(let d=1;d<=daysInMonth;d++){
-      const dayExp=expenses.filter(t=>sameDay(t.date,selYear,selMonth,d)).reduce((s,t)=>s+toKZT(t.amount,t.currency,exchangeRates),0);
+      const dayExp=transactions.filter(tx=>tx.type==="expense"&&sameDay(tx.date,calYear,calMonth,d))
+        .reduce((s,tx)=>s+toKZT(tx.amount,tx.currency,exchangeRates),0);
       arr.push({day:d,amount:dayExp});
     }
     return arr;
-  },[expenses,selYear,selMonth,daysInMonth,exchangeRates]);
-  const maxDay=Math.max(...dayTotals.map(d=>d.amount),1);
+  },[transactions,calYear,calMonth,daysInMonth,exchangeRates]);
+  const calMonthTotal=dayTotals.reduce((s,d)=>s+d.amount,0);
+
+  // Format an amount compactly for tight calendar cells: 1500 → "1.5K", 25000 → "25K", 1200000 → "1.2M"
+  const fmtCompact=(n)=>{
+    if(n===0)return"";
+    if(n>=1000000)return`${(n/1000000).toFixed(1).replace(/\.0$/,"")}M`;
+    if(n>=1000)return`${(n/1000).toFixed(n>=10000?0:1).replace(/\.0$/,"")}K`;
+    return Math.round(n).toString();
+  };
+
+  const presets=[
+    {k:"last7",l:"7d"},
+    {k:"last30",l:"30d"},
+    {k:"thisMonth",l:"This month"},
+    {k:"lastMonth",l:"Last month"},
+    {k:"thisYear",l:"Year"}
+  ];
 
   return(
     <div style={{height:"100%",overflow:"auto",padding:"calc(env(safe-area-inset-top, 20px) + 40px) 16px 16px"}}>
       <div style={{fontFamily:"system-ui,sans-serif",fontSize:22,fontWeight:700,color:t.text,marginBottom:16}}>Analytics</div>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,background:t.bgCard,borderRadius:12,padding:"10px 16px",border:`1px solid ${t.border}`}}>
-        <button onClick={prevMonth} style={{background:"none",border:"none",color:t.accent,fontSize:22,cursor:"pointer",padding:"0 6px"}}>‹</button>
-        <span style={{fontSize:16,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif"}}>{MONTHS_FULL[selMonth]} {selYear}</span>
-        <button onClick={nextMonth} style={{background:"none",border:"none",color:t.accent,fontSize:22,cursor:"pointer",padding:"0 6px"}}>›</button>
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:20}}>
-        {[{l:"Income",v:totalInc,c:"#10b981"},{l:"Expenses",v:totalExp,c:"#ef4444"},{l:"Saved",v:totalInc-totalExp,c:"#3b82f6"}].map(({l,v,c})=>(
-          <div key={l} style={{background:t.bgCard,borderRadius:12,padding:"12px 10px",border:`1px solid ${t.border}`,textAlign:"center"}}>
-            <div style={{fontSize:11,color:t.textMuted,marginBottom:4}}>{l}</div>
-            <div style={{fontSize:12,fontWeight:700,color:c,fontFamily:"monospace"}}>{fmtAmt(fromKZT(v,selectedCurrency,exchangeRates),selectedCurrency)}</div>
-          </div>
-        ))}
-      </div>
-      {pieData.length>0?(
-        <div style={{background:t.bgCard,borderRadius:16,padding:"16px",border:`1px solid ${t.border}`,marginBottom:20}}>
-          <div style={{fontSize:15,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif",marginBottom:12}}>Spending by Category</div>
-          <SimplePieChart data={pieData}/>
-          <div style={{textAlign:"center",marginTop:-110,marginBottom:92,fontSize:20,fontWeight:700,color:t.text,fontFamily:"monospace",pointerEvents:"none"}}>
-            {fmtAmt(fromKZT(totalExp,selectedCurrency,exchangeRates),selectedCurrency)}
-          </div>
-          <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:8}}>
-            {pieData.map(d=>{
-              const pct=totalExp>0?((d.value/totalExp)*100).toFixed(1):0;
-              const bar=totalExp>0?(d.value/totalExp)*100:0;
-              return(
-                <div key={d.name}>
-                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
-                    <div style={{width:10,height:10,borderRadius:2,background:d.color,flexShrink:0}}/>
-                    <span style={{fontSize:13,color:t.text,flex:1}}>{d.icon} {d.name}</span>
-                    <span style={{fontSize:12,color:t.textMuted}}>{pct}%</span>
-                    <span style={{fontSize:13,fontWeight:600,color:t.text,fontFamily:"monospace"}}>{fmtAmt(fromKZT(d.value,selectedCurrency,exchangeRates),selectedCurrency)}</span>
+
+      {/* ─────── Pie Chart card with own date range ─────── */}
+      <div style={{background:t.bgCard,borderRadius:16,padding:"16px",border:`1px solid ${t.border}`,marginBottom:16}}>
+        <div style={{fontSize:15,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif",marginBottom:10}}>Spending by Category</div>
+
+        {/* Quick preset chips */}
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+          {presets.map(({k,l})=>(
+            <button key={k} onClick={()=>applyRangePreset(k)} style={{background:t.bgInput,color:t.textMuted,border:`1px solid ${t.border}`,borderRadius:14,padding:"5px 12px",fontSize:11,cursor:"pointer",fontWeight:500}}>
+              {l}
+            </button>
+          ))}
+        </div>
+
+        {/* Custom date range pickers */}
+        <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:14,padding:"10px 12px",background:t.bgInput,borderRadius:10}}>
+          <input type="date" value={pieFromDate} onChange={e=>setPieFromDate(e.target.value)} style={{flex:1,minWidth:0,background:"transparent",color:t.text,border:"none",fontSize:12,padding:0,fontFamily:"system-ui,sans-serif",WebkitAppearance:"none"}}/>
+          <span style={{color:t.textMuted,fontSize:12}}>→</span>
+          <input type="date" value={pieToDate} onChange={e=>setPieToDate(e.target.value)} style={{flex:1,minWidth:0,background:"transparent",color:t.text,border:"none",fontSize:12,padding:0,fontFamily:"system-ui,sans-serif",WebkitAppearance:"none"}}/>
+        </div>
+
+        {/* Summary numbers for the selected range */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
+          {[
+            {l:"Income",v:pieRangeData.totalInc,c:"#10b981"},
+            {l:"Spent",v:pieRangeData.totalExp,c:"#ef4444"},
+            {l:"Net",v:pieRangeData.totalInc-pieRangeData.totalExp,c:"#3b82f6"}
+          ].map(({l,v,c})=>(
+            <div key={l} style={{background:t.bgInput,borderRadius:8,padding:"8px 6px",textAlign:"center"}}>
+              <div style={{fontSize:10,color:t.textMuted,marginBottom:2}}>{l}</div>
+              <div style={{fontSize:11,fontWeight:700,color:c,fontFamily:"monospace"}}>{fmtAmt(fromKZT(v,selectedCurrency,exchangeRates),selectedCurrency)}</div>
+            </div>
+          ))}
+        </div>
+
+        {pieRangeData.slices.length>0?(
+          <>
+            <SimplePieChart data={pieRangeData.slices}/>
+            <div style={{textAlign:"center",marginTop:-110,marginBottom:92,fontSize:18,fontWeight:700,color:t.text,fontFamily:"monospace",pointerEvents:"none"}}>
+              {fmtAmt(fromKZT(pieRangeData.totalExp,selectedCurrency,exchangeRates),selectedCurrency)}
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:8}}>
+              {pieRangeData.slices.map(d=>{
+                const pct=pieRangeData.totalExp>0?((d.value/pieRangeData.totalExp)*100).toFixed(1):0;
+                const bar=pieRangeData.totalExp>0?(d.value/pieRangeData.totalExp)*100:0;
+                return(
+                  <div key={d.name}>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                      <div style={{width:10,height:10,borderRadius:2,background:d.color,flexShrink:0}}/>
+                      <span style={{fontSize:13,color:t.text,flex:1}}>{d.icon} {d.name}</span>
+                      <span style={{fontSize:12,color:t.textMuted}}>{pct}%</span>
+                      <span style={{fontSize:13,fontWeight:600,color:t.text,fontFamily:"monospace"}}>{fmtAmt(fromKZT(d.value,selectedCurrency,exchangeRates),selectedCurrency)}</span>
+                    </div>
+                    <div style={{height:3,background:t.bgInput,borderRadius:2}}><div style={{height:"100%",width:`${bar}%`,background:d.color,borderRadius:2}}/></div>
                   </div>
-                  <div style={{height:3,background:t.bgInput,borderRadius:2}}><div style={{height:"100%",width:`${bar}%`,background:d.color,borderRadius:2}}/></div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
+          </>
+        ):(
+          <div style={{textAlign:"center",padding:"32px 16px",color:t.textMuted}}>
+            <div style={{fontSize:32,marginBottom:8}}>📊</div>
+            No expenses in this range
           </div>
-        </div>
-      ):(
-        <div style={{textAlign:"center",padding:"32px",color:t.textMuted,background:t.bgCard,borderRadius:16,border:`1px solid ${t.border}`,marginBottom:20}}>
-          <div style={{fontSize:32,marginBottom:8}}>📊</div>
-          No expenses this month yet
-        </div>
-      )}
+        )}
+      </div>
+
+      {/* ─────── Calendar card with own month navigation ─────── */}
       <div style={{background:t.bgCard,borderRadius:16,padding:"16px",border:`1px solid ${t.border}`}}>
-        <div style={{fontSize:15,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif",marginBottom:12}}>Daily Spending — {MONTHS_SHORT[selMonth]}</div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+          <div style={{fontSize:15,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif"}}>Daily Spending</div>
+          <div style={{fontSize:12,color:t.textMuted,fontFamily:"monospace"}}>{fmtAmt(fromKZT(calMonthTotal,selectedCurrency,exchangeRates),selectedCurrency)}</div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,background:t.bgInput,borderRadius:10,padding:"6px 12px"}}>
+          <button onClick={prevCalMonth} style={{background:"none",border:"none",color:t.accent,fontSize:18,cursor:"pointer",padding:"2px 6px"}}>‹</button>
+          <span style={{fontSize:13,fontWeight:600,color:t.text}}>{MONTHS_FULL[calMonth]} {calYear}</span>
+          <button onClick={nextCalMonth} style={{background:"none",border:"none",color:t.accent,fontSize:18,cursor:"pointer",padding:"2px 6px"}}>›</button>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
           {["S","M","T","W","T","F","S"].map((d,i)=><div key={i} style={{textAlign:"center",fontSize:10,color:t.textMuted,paddingBottom:4,fontWeight:600}}>{d}</div>)}
-          {Array.from({length:new Date(selYear,selMonth,1).getDay()}).map((_,i)=><div key={"e"+i}/>)}
+          {Array.from({length:new Date(calYear,calMonth,1).getDay()}).map((_,i)=><div key={"e"+i}/>)}
           {dayTotals.map(({day,amount})=>{
-            const intensity=amount>0?Math.max(0.2,amount/maxDay):0;
-            const bg=amount>0?`rgba(16,185,129,${intensity})`:"transparent";
+            const hasSpending=amount>0;
+            const displayAmount=hasSpending?fromKZT(amount,selectedCurrency,exchangeRates):0;
             return(
-              <div key={day} style={{aspectRatio:"1",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:bg,borderRadius:6,border:`1px solid ${amount>0?t.accent+"44":t.border}`}}>
-                <div style={{fontSize:10,fontWeight:500,color:amount>0?"#10b981":t.textMuted}}>{day}</div>
+              <div key={day} style={{
+                aspectRatio:"1",
+                display:"flex",
+                flexDirection:"column",
+                alignItems:"center",
+                justifyContent:"center",
+                background:hasSpending?"#ef444415":"transparent",
+                borderRadius:6,
+                border:`1px solid ${hasSpending?"#ef444444":t.border}`,
+                padding:"2px"
+              }}>
+                <div style={{fontSize:11,fontWeight:600,color:hasSpending?t.text:t.textMuted,lineHeight:1}}>{day}</div>
+                {hasSpending&&(
+                  <div style={{fontSize:9,fontWeight:600,color:"#ef4444",fontFamily:"monospace",marginTop:2,lineHeight:1}}>
+                    {fmtCompact(displayAmount)}
+                  </div>
+                )}
               </div>
             );
           })}
