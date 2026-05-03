@@ -908,20 +908,35 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,settings,onS
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
             {recentTxns.map(txn=>{
               const acc=accounts.find(a=>a.id===txn.accountId);
+              const toAcc=accounts.find(a=>a.id===txn.toAccountId);
               const cat=categories.find(c=>c.id===txn.categoryId);
               const color=txn.type==="expense"?"#ef4444":txn.type==="income"?"#10b981":"#3b82f6";
               const sign=txn.type==="expense"?"-":txn.type==="income"?"+":"";
+              const isTransfer=txn.type==="transfer";
+              // Show both arrival amount alongside the outgoing amount when it's a cross-currency transfer
+              const showBothAmounts=isTransfer&&txn.toAmount!=null&&txn.toCurrency&&txn.toCurrency!==txn.currency;
               return(
                 <div key={txn.id} onClick={()=>onTxnClick(txn)} style={{background:t.bgCard,borderRadius:14,padding:"12px 14px",border:`1px solid ${t.border}`,cursor:"pointer"}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                    <div style={{display:"flex",alignItems:"center",gap:10}}>
-                      <div style={{width:38,height:38,borderRadius:10,background:(cat?.color||"#64748b")+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{txn.type==="transfer"?"⇄":cat?.icon||"💸"}</div>
-                      <div>
-                        <div style={{fontSize:14,fontWeight:500,color:t.text}}>{txn.type==="transfer"?"Transfer":cat?.name||"Unknown"}</div>
-                        <div style={{fontSize:11,color:t.textMuted}}>{acc?.name} · {new Date(txn.date).toLocaleDateString("en-US",{month:"short",day:"numeric"})} · {fmtTime(txn.date)}</div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0,flex:1}}>
+                      <div style={{width:38,height:38,borderRadius:10,background:(isTransfer?"#3b82f6":(cat?.color||"#64748b"))+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{isTransfer?"⇄":cat?.icon||"💸"}</div>
+                      <div style={{minWidth:0,flex:1}}>
+                        <div style={{fontSize:14,fontWeight:500,color:t.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                          {isTransfer?(
+                            <span>{acc?.name||"?"} <span style={{color:t.textMuted}}>→</span> {toAcc?.name||"?"}</span>
+                          ):(cat?.name||"Unknown")}
+                        </div>
+                        <div style={{fontSize:11,color:t.textMuted}}>
+                          {isTransfer?"Transfer":(acc?.name||"")} · {new Date(txn.date).toLocaleDateString("en-US",{month:"short",day:"numeric"})} · {fmtTime(txn.date)}
+                        </div>
                       </div>
                     </div>
-                    <div style={{fontSize:16,fontWeight:700,color,fontFamily:"monospace"}}>{sign}{fmtAmt(txn.amount,txn.currency)}</div>
+                    <div style={{textAlign:"right",flexShrink:0}}>
+                      <div style={{fontSize:16,fontWeight:700,color,fontFamily:"monospace"}}>{sign}{fmtAmt(txn.amount,txn.currency)}</div>
+                      {showBothAmounts&&(
+                        <div style={{fontSize:11,color:t.textMuted,fontFamily:"monospace",marginTop:2}}>→ +{fmtAmt(txn.toAmount,txn.toCurrency)}</div>
+                      )}
+                    </div>
                   </div>
                   {txn.aiComment&&(
                     <PetCommentBlock comment={txn.aiComment} petEmoji={(PETS[settings.aiPet]||PETS.dog).emoji} t={t}/>
@@ -1083,21 +1098,33 @@ function HistoryScreen({transactions,accounts,categories,settings,onTxnClick,t})
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
               {g.txns.map(txn=>{
                 const acc=accounts.find(a=>a.id===txn.accountId);
+                const toAcc=accounts.find(a=>a.id===txn.toAccountId);
                 const cat=categories.find(c=>c.id===txn.categoryId);
                 const sub=cat?.subcategories?.find(s=>s.id===txn.subcategoryId);
                 const color=txn.type==="expense"?"#ef4444":txn.type==="income"?"#10b981":"#3b82f6";
                 const sign=txn.type==="expense"?"-":txn.type==="income"?"+":"";
+                const isTransfer=txn.type==="transfer";
+                const showBothAmounts=isTransfer&&txn.toAmount!=null&&txn.toCurrency&&txn.toCurrency!==txn.currency;
                 return(
                   <div key={txn.id} onClick={()=>onTxnClick(txn)} style={{background:t.bgCard,borderRadius:12,padding:"12px 14px",border:`1px solid ${t.border}`,cursor:"pointer"}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                      <div style={{display:"flex",alignItems:"center",gap:10}}>
-                        <div style={{width:34,height:34,borderRadius:9,background:(cat?.color||"#64748b")+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>{txn.type==="transfer"?"⇄":cat?.icon||"💸"}</div>
-                        <div>
-                          <div style={{fontSize:14,fontWeight:500,color:t.text}}>{txn.type==="transfer"?"Transfer":(sub?sub.name:cat?.name)||"Unknown"}</div>
-                          <div style={{fontSize:11,color:t.textMuted}}>{fmtTime(txn.date)} · {acc?.name}{txn.note?` · ${txn.note.slice(0,22)}${txn.note.length>22?"…":""}`:""}</div>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+                      <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0,flex:1}}>
+                        <div style={{width:34,height:34,borderRadius:9,background:(isTransfer?"#3b82f6":(cat?.color||"#64748b"))+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>{isTransfer?"⇄":cat?.icon||"💸"}</div>
+                        <div style={{minWidth:0,flex:1}}>
+                          <div style={{fontSize:14,fontWeight:500,color:t.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                            {isTransfer?(
+                              <span>{acc?.name||"?"} <span style={{color:t.textMuted}}>→</span> {toAcc?.name||"?"}</span>
+                            ):(sub?sub.name:cat?.name)||"Unknown"}
+                          </div>
+                          <div style={{fontSize:11,color:t.textMuted}}>{fmtTime(txn.date)}{!isTransfer?` · ${acc?.name}`:""}{txn.note?` · ${txn.note.slice(0,22)}${txn.note.length>22?"…":""}`:""}</div>
                         </div>
                       </div>
-                      <div style={{fontSize:15,fontWeight:700,color,fontFamily:"monospace"}}>{sign}{fmtAmt(txn.amount,txn.currency)}</div>
+                      <div style={{textAlign:"right",flexShrink:0}}>
+                        <div style={{fontSize:15,fontWeight:700,color,fontFamily:"monospace"}}>{sign}{fmtAmt(txn.amount,txn.currency)}</div>
+                        {showBothAmounts&&(
+                          <div style={{fontSize:11,color:t.textMuted,fontFamily:"monospace",marginTop:2}}>→ +{fmtAmt(txn.toAmount,txn.toCurrency)}</div>
+                        )}
+                      </div>
                     </div>
                     {txn.aiComment&&<PetCommentBlock comment={txn.aiComment} petEmoji={(PETS[settings.aiPet]||PETS.dog).emoji} t={t}/>}
                   </div>
