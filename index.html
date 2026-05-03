@@ -1122,6 +1122,10 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
   const[newCatName,setNewCatName]=useState("");
   const[newCatIcon,setNewCatIcon]=useState("📌");
   const[newCatType,setNewCatType]=useState("expense");
+  // Category expansion: which category is currently showing its subcategories
+  const[expandedCatId,setExpandedCatId]=useState(null);
+  // Per-category buffer for new subcategory name (keyed by category id)
+  const[newSubName,setNewSubName]=useState("");
   const[newFeName,setNewFeName]=useState("");
   const[newFeAmt,setNewFeAmt]=useState("");
   const[newFeDay,setNewFeDay]=useState("1");
@@ -1221,28 +1225,90 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
       <Section k="categories" label="Categories" icon="🗂️"/>
       {sec==="categories"&&(
         <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:8}}>
-          {categories.map(c=>{
-            const type=c.type||(/salary|income|loan|freelance/i.test(c.name)?"income":"expense");
-            const badgeColor=type==="income"?"#10b981":"#ef4444";
+          {/* Group categories by type for clearer Income vs Expense separation */}
+          {["expense","income"].map(groupType=>{
+            const groupCats=categories.filter(c=>{
+              const ct=c.type||(/salary|income|loan|freelance/i.test(c.name)?"income":"expense");
+              return ct===groupType;
+            });
+            if(groupCats.length===0)return null;
+            const headerColor=groupType==="income"?"#10b981":"#ef4444";
             return(
-              <div key={c.id} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 0",borderBottom:`1px solid ${t.border}`}}>
-                <span style={{fontSize:18}}>{c.icon}</span>
-                <span style={{flex:1,fontSize:14,color:t.text,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</span>
-                <span style={{fontSize:10,color:badgeColor,border:`1px solid ${badgeColor}44`,borderRadius:6,padding:"2px 6px",background:badgeColor+"15",textTransform:"uppercase",flexShrink:0}}>{type}</span>
-                <span style={{color:t.textMuted,fontSize:11,flexShrink:0}}>{c.subcategories?.length||0}</span>
-                <button onClick={()=>onCategoriesChange(categories.filter(x=>x.id!==c.id))} style={{background:"#ef444422",border:"none",borderRadius:6,padding:"5px 10px",color:"#ef4444",cursor:"pointer",fontSize:12,flexShrink:0}}>✕</button>
+              <div key={groupType} style={{marginBottom:14}}>
+                <div style={{fontSize:11,fontWeight:700,color:headerColor,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:6,paddingLeft:2}}>
+                  {groupType==="income"?"💰 Income":"💸 Expense"} categories
+                </div>
+                {groupCats.map(c=>{
+                  const isExpanded=expandedCatId===c.id;
+                  const subs=c.subcategories||[];
+                  return(
+                    <div key={c.id} style={{background:t.bgInput,borderRadius:10,marginBottom:6,overflow:"hidden"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",cursor:"pointer"}} onClick={()=>{setExpandedCatId(isExpanded?null:c.id);setNewSubName("");}}>
+                        <span style={{fontSize:18}}>{c.icon}</span>
+                        <span style={{flex:1,fontSize:14,color:t.text,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</span>
+                        <span style={{color:t.textMuted,fontSize:11,flexShrink:0}}>{subs.length} sub</span>
+                        <span style={{color:t.textMuted,fontSize:14,transform:isExpanded?"rotate(90deg)":"none",transition:"transform .15s"}}>›</span>
+                        <button onClick={(e)=>{e.stopPropagation();if(confirm(`Delete category "${c.name}" and all its subcategories?`))onCategoriesChange(categories.filter(x=>x.id!==c.id));}} style={{background:"#ef444422",border:"none",borderRadius:6,padding:"4px 9px",color:"#ef4444",cursor:"pointer",fontSize:11,flexShrink:0}}>✕</button>
+                      </div>
+                      {isExpanded&&(
+                        <div className="fade-in" style={{padding:"4px 12px 12px",borderTop:`1px solid ${t.border}`}}>
+                          {subs.length===0&&(
+                            <div style={{fontSize:11,color:t.textMuted,fontStyle:"italic",padding:"8px 4px"}}>No subcategories yet — add one below.</div>
+                          )}
+                          {subs.map(s=>(
+                            <div key={s.id} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 4px"}}>
+                              <span style={{color:t.textMuted,fontSize:11}}>•</span>
+                              <span style={{flex:1,fontSize:13,color:t.text}}>{s.name}</span>
+                              <button onClick={()=>{
+                                const updated=categories.map(cat=>cat.id===c.id?{...cat,subcategories:subs.filter(x=>x.id!==s.id)}:cat);
+                                onCategoriesChange(updated);
+                              }} style={{background:"transparent",border:"none",color:t.textMuted,cursor:"pointer",fontSize:14,padding:"2px 6px"}}>✕</button>
+                            </div>
+                          ))}
+                          <div style={{display:"flex",gap:6,marginTop:8}}>
+                            <input
+                              value={newSubName}
+                              onChange={e=>setNewSubName(e.target.value)}
+                              onKeyDown={e=>{
+                                if(e.key==="Enter"&&newSubName.trim()){
+                                  const updated=categories.map(cat=>cat.id===c.id?{...cat,subcategories:[...subs,{id:uid(),name:newSubName.trim()}]}:cat);
+                                  onCategoriesChange(updated);
+                                  setNewSubName("");
+                                }
+                              }}
+                              placeholder="Subcategory name"
+                              style={{flex:1,minWidth:0,background:t.bgCard,color:t.text,border:`1px solid ${t.border}`,borderRadius:7,padding:"7px 10px",fontSize:13,fontFamily:"system-ui,sans-serif"}}
+                            />
+                            <button onClick={()=>{
+                              if(!newSubName.trim())return;
+                              const updated=categories.map(cat=>cat.id===c.id?{...cat,subcategories:[...subs,{id:uid(),name:newSubName.trim()}]}:cat);
+                              onCategoriesChange(updated);
+                              setNewSubName("");
+                            }} style={{background:"#10b981",border:"none",borderRadius:7,padding:"7px 14px",color:"#fff",cursor:"pointer",fontSize:14,fontWeight:700,flexShrink:0}}>+</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             );
           })}
-          <div style={{marginTop:10,display:"flex",gap:8,alignItems:"center"}}>
-            <div style={{display:"flex",borderRadius:8,overflow:"hidden",border:`1px solid ${t.border}`,flexShrink:0}}>
-              {["expense","income"].map(tt=>(
-                <button key={tt} onClick={()=>setNewCatType(tt)} style={{padding:"7px 10px",background:newCatType===tt?(tt==="income"?"#10b981":"#ef4444"):t.bgInput,color:newCatType===tt?"#fff":t.textMuted,border:"none",fontSize:11,fontWeight:600,cursor:"pointer",textTransform:"uppercase"}}>{tt==="income"?"In":"Out"}</button>
-              ))}
+
+          {/* Add new category form */}
+          <div style={{paddingTop:12,borderTop:`1px solid ${t.border}`}}>
+            <div style={{fontSize:11,fontWeight:700,color:t.textMuted,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:8}}>Add new category</div>
+            <div style={{display:"flex",gap:8,alignItems:"center"}}>
+              <div style={{display:"flex",borderRadius:8,overflow:"hidden",border:`1px solid ${t.border}`,flexShrink:0}}>
+                {["expense","income"].map(tt=>(
+                  <button key={tt} onClick={()=>setNewCatType(tt)} style={{padding:"7px 10px",background:newCatType===tt?(tt==="income"?"#10b981":"#ef4444"):t.bgInput,color:newCatType===tt?"#fff":t.textMuted,border:"none",fontSize:11,fontWeight:600,cursor:"pointer",textTransform:"uppercase"}}>{tt==="income"?"In":"Out"}</button>
+                ))}
+              </div>
+              <input value={newCatIcon} onChange={e=>setNewCatIcon(e.target.value)} style={{width:44,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"8px",fontSize:18,textAlign:"center",flexShrink:0}}/>
+              <input value={newCatName} onChange={e=>setNewCatName(e.target.value)} placeholder="Name" style={{flex:1,minWidth:0,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"8px 10px",fontSize:14,fontFamily:"system-ui,sans-serif"}}/>
+              <button onClick={()=>{if(!newCatName.trim())return;onCategoriesChange([...categories,{id:uid(),name:newCatName.trim(),icon:newCatIcon||"📌",color:newCatType==="income"?"#10b981":"#ef4444",type:newCatType,subcategories:[]}]);setNewCatName("");setNewCatIcon("📌");}} style={{background:"#10b981",border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",cursor:"pointer",fontSize:16,fontWeight:700,flexShrink:0}}>+</button>
             </div>
-            <input value={newCatIcon} onChange={e=>setNewCatIcon(e.target.value)} style={{width:44,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"8px",fontSize:18,textAlign:"center",flexShrink:0}}/>
-            <input value={newCatName} onChange={e=>setNewCatName(e.target.value)} placeholder="Name" style={{flex:1,minWidth:0,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"8px 10px",fontSize:14,fontFamily:"system-ui,sans-serif"}}/>
-            <button onClick={()=>{if(!newCatName.trim())return;onCategoriesChange([...categories,{id:uid(),name:newCatName.trim(),icon:newCatIcon||"📌",color:newCatType==="income"?"#10b981":"#ef4444",type:newCatType,subcategories:[]}]);setNewCatName("");setNewCatIcon("📌");}} style={{background:"#10b981",border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",cursor:"pointer",fontSize:16,fontWeight:700,flexShrink:0}}>+</button>
+            <div style={{fontSize:11,color:t.textMuted,marginTop:6,fontStyle:"italic"}}>💡 Tip: tap any category above to add subcategories to it.</div>
           </div>
         </div>
       )}
