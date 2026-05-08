@@ -425,24 +425,34 @@ const getAIComment=async(type,amount,currency,category,subcategory,note,settings
 For USD/USDT: roughly divide KZT amounts by 520 (so $1 ≈ 520 KZT).
 Use ONLY benchmarks that fit naturally — don't list multiple comparisons.`;
 
+  // Add stronger language guidance for Kazakh — the model needs explicit instructions
+  // to produce natural Kazakh rather than awkward word-for-word translations
+  const langGuidance=lang==="Kazakh"
+    ? `Respond in Kazakh (қазақ тілі). Use natural, native-sounding Kazakh — proper grammar, correct verb endings, and idiomatic phrasing. Avoid Russian loanwords when a clear Kazakh equivalent exists. Use the colloquial register (informal "сен" form) since this is a personal pet companion. Keep currency names in their natural Kazakh forms (теңге, доллар).`
+    : `Respond in ${lang}.`;
+
   const systemPrompt=`${pet.persona} You live in their budgeting app and comment briefly on their financial actions. Tone style: ${tone}.
 
 ${kzPriceContext}
 
 When making "that's X cups of coffee" type comparisons, use the price points above and ROUND sensibly. For small amounts (under 500 KZT), don't compare to groceries or rent — pick something that actually costs that much (a soda, a bus ride). Match the comparison to the actual size of the expense.${customExtra}
 
-Keep it to 1-2 sentences MAX. Respond in ${lang}. No preamble, no emoji overload (pet emojis are added by the app separately), just the comment directly in character.`;
+Keep it to 1-2 sentences MAX. ${langGuidance} No preamble, no emoji overload (pet emojis are added by the app separately), just the comment directly in character.`;
 
   const userMsg=`I ${actionDesc}. My note: "${note||"no note"}". Give me your quick take.`;
 
   try{
     // Calls are routed through a Cloudflare Worker which holds the Anthropic API key
     // as an encrypted secret, keeping it out of this public repo.
+    // Model selection: Kazakh is underrepresented in LLM training data and benefits
+    // significantly from Sonnet's stronger multilingual abilities. English/Russian
+    // work well on Haiku 4.5 (~5x cheaper), so we only use Sonnet when needed.
+    const model=lang==="Kazakh"?"claude-sonnet-4-20250514":"claude-haiku-4-5-20251001";
     const res=await fetch("https://finance-tracker-proxy.life-bekzat.workers.dev",{
       method:"POST",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({
-        model:"claude-haiku-4-5-20251001",
+        model:model,
         max_tokens:120,
         system:systemPrompt,
         messages:[{role:"user",content:userMsg}]
@@ -483,6 +493,97 @@ const mkTheme=(dark)=>({
 });
 
 // ── MODAL ──
+// ── UI TRANSLATIONS ──
+// Maps UI strings to Russian and Kazakh. English is the source of truth (the keys).
+// Not every string is translated — focus is on the most visible/repeated ones.
+const TRANSLATIONS={
+  English:{},
+  Russian:{
+    // Tabs
+    "Home":"Главная","Analytics":"Аналитика","History":"История","Settings":"Настройки",
+    // Home screen
+    "Welcome back":"С возвращением","Total Balance":"Общий баланс",
+    "Income":"Доход","Spent":"Потрачено","Saved":"Накоплено","Net":"Чистый",
+    "+ Income":"+ Доход","- Expense":"− Расход","⇄ Transfer":"⇄ Перевод",
+    "My Accounts":"Мои счета","Recent Transactions":"Недавние операции",
+    "Upcoming Fixed":"Постоянные расходы","Remaining budget":"Остаток бюджета",
+    "Financial Wisdom":"Финансовая мудрость",
+    "No transactions yet. Add your first one!":"Операций пока нет. Добавьте первую!",
+    // Add transaction
+    "Add Transaction":"Новая операция","Edit Transaction":"Изменить операцию",
+    "Expense":"Расход","Income ":"Доход","Transfer":"Перевод",
+    "Amount":"Сумма","From Account":"Со счёта","To Account":"На счёт",
+    "Category":"Категория","Subcategory":"Подкатегория",
+    "Date":"Дата","Time":"Время","Note":"Заметка","Add a note...":"Добавить заметку…",
+    "Save Transaction":"Сохранить","Update Transaction":"Обновить",
+    "— Select category —":"— Выберите категорию —","— Select subcategory —":"— Выберите подкатегорию —",
+    "Exchange rate":"Курс обмена","Use live rate":"Текущий курс",
+    "Will arrive:":"Поступит:",
+    // Detail modal
+    "Transaction Detail":"Детали операции","Account":"Счёт","Type":"Тип",
+    "✎ Edit Transaction":"✎ Изменить","Delete Transaction":"Удалить операцию",
+    // History
+    "No transactions this month":"В этом месяце операций нет",
+    // Analytics
+    "Spending by Category":"Расходы по категориям","Daily Spending":"Расходы по дням",
+    "This month":"Этот месяц","Last month":"Прошлый месяц","Year":"Год",
+    "No expenses in this range":"Нет расходов за этот период",
+    // Settings
+    "Display Name":"Имя","Dark Mode":"Тёмная тема","AI Coach":"ИИ-помощник",
+    "Accounts":"Счета","Categories":"Категории","Fixed Expenses":"Постоянные расходы",
+    "AI Coach Settings":"Настройки ИИ","Exchange Rates":"Курсы валют",
+    "Export Data":"Экспорт данных","Download CSV":"Скачать CSV",
+    "Danger Zone":"Опасная зона","Reset All Data":"Сбросить все данные",
+    "Add new account":"Новый счёт","Add new category":"Новая категория",
+    "Tone":"Тон","Language":"Язык","Custom Prompt Prefix":"Дополнение к промпту",
+    "Your AI Companion":"Ваш ИИ-питомец","Refresh rates now":"Обновить курсы",
+    // Misc
+    "Save":"Сохранить","Cancel":"Отмена","Delete":"Удалить","Edit":"Изменить",
+    "Skip":"Пропустить","Continue":"Далее","Back":"Назад",
+    "Transfer ":"Перевод","Bank":"Банк","Crypto":"Крипто",
+    "ask pet":"спросить","hide":"скрыть"
+  },
+  Kazakh:{
+    "Home":"Басты","Analytics":"Талдау","History":"Тарих","Settings":"Баптаулар",
+    "Welcome back":"Қош келдіңіз","Total Balance":"Жалпы баланс",
+    "Income":"Кіріс","Spent":"Жұмсалды","Saved":"Жинақталды","Net":"Таза",
+    "+ Income":"+ Кіріс","- Expense":"− Шығыс","⇄ Transfer":"⇄ Аударым",
+    "My Accounts":"Менің шоттарым","Recent Transactions":"Соңғы операциялар",
+    "Upcoming Fixed":"Тұрақты шығындар","Remaining budget":"Қалған бюджет",
+    "Financial Wisdom":"Қаржы даналығы",
+    "No transactions yet. Add your first one!":"Операциялар жоқ. Алғашқысын қосыңыз!",
+    "Add Transaction":"Жаңа операция","Edit Transaction":"Операцияны өзгерту",
+    "Expense":"Шығыс","Income ":"Кіріс","Transfer":"Аударым",
+    "Amount":"Сома","From Account":"Шоттан","To Account":"Шотқа",
+    "Category":"Санат","Subcategory":"Ішкі санат",
+    "Date":"Күні","Time":"Уақыт","Note":"Ескертпе","Add a note...":"Ескертпе қосу…",
+    "Save Transaction":"Сақтау","Update Transaction":"Жаңарту",
+    "— Select category —":"— Санат таңдаңыз —","— Select subcategory —":"— Ішкі санат —",
+    "Exchange rate":"Айырбас бағамы","Use live rate":"Ағымдағы бағам",
+    "Will arrive:":"Түседі:",
+    "Transaction Detail":"Операция мәліметтері","Account":"Шот","Type":"Түрі",
+    "✎ Edit Transaction":"✎ Өзгерту","Delete Transaction":"Жою",
+    "No transactions this month":"Бұл айда операциялар жоқ",
+    "Spending by Category":"Санат бойынша шығындар","Daily Spending":"Күнделікті шығындар",
+    "This month":"Осы ай","Last month":"Өткен ай","Year":"Жыл",
+    "No expenses in this range":"Бұл кезеңде шығындар жоқ",
+    "Display Name":"Аты-жөні","Dark Mode":"Қара режим","AI Coach":"ЖИ-көмекші",
+    "Accounts":"Шоттар","Categories":"Санаттар","Fixed Expenses":"Тұрақты шығындар",
+    "AI Coach Settings":"ЖИ-баптаулары","Exchange Rates":"Бағамдар",
+    "Export Data":"Деректерді экспорттау","Download CSV":"CSV жүктеу",
+    "Danger Zone":"Қауіпті аймақ","Reset All Data":"Барлық деректерді өшіру",
+    "Add new account":"Жаңа шот","Add new category":"Жаңа санат",
+    "Tone":"Стиль","Language":"Тіл","Custom Prompt Prefix":"Промптқа қосымша",
+    "Your AI Companion":"ЖИ серігіңіз","Refresh rates now":"Бағамдарды жаңарту",
+    "Save":"Сақтау","Cancel":"Болдырмау","Delete":"Жою","Edit":"Өзгерту",
+    "Skip":"Өткізу","Continue":"Жалғастыру","Back":"Артқа",
+    "Bank":"Банк","Crypto":"Крипто",
+    "ask pet":"сұрау","hide":"жасыру"
+  }
+};
+// Translation function: returns translated string or falls back to the original English
+const tr=(key,lang)=>(TRANSLATIONS[lang||"English"]||{})[key]||key;
+
 // ── EMOJI PICKER ──
 // Compact emoji selector: tap-to-pick from common categories OR free-type any emoji.
 // Used by accounts and categories. Note: Telegram Premium custom/animated emoji are NOT
@@ -616,22 +717,18 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
   const[amount,setAmount]=useState("");
   const[accountId,setAccountId]=useState(accounts[0]?.id||"");
   const[toAccountId,setToAccountId]=useState(accounts[1]?.id||"");
-  // Per-transaction currency lets users record e.g. a USD expense from a KZT bank account
   const[currency,setCurrency]=useState("KZT");
   const[categoryId,setCategoryId]=useState("");
   const[subcategoryId,setSubcategoryId]=useState("");
   const[note,setNote]=useState("");
   const[date,setDate]=useState(new Date().toISOString().split("T")[0]);
-  // Time of transaction (HH:MM format), defaults to current local time
   const[time,setTime]=useState(()=>{
     const d=new Date();
     return`${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
   });
-  // Custom exchange rate for transfers — null means "use the auto-fetched rate from settings"
   const[customRate,setCustomRate]=useState(null);
   const[loading,setLoading]=useState(false);
 
-  // The currently selected "from" account determines which currencies can be used
   const selAcc=accounts.find(a=>a.id===accountId);
   const availableCurrencies=selAcc?getAccountCurrencies(selAcc.type):["KZT"];
 
@@ -730,10 +827,10 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
     onClose();
   };
 
-  const modes=[{k:"expense",l:"Expense",c:"#ef4444"},{k:"income",l:"Income",c:"#10b981"},{k:"transfer",l:"Transfer",c:"#3b82f6"}];
+  const modes=[{k:"expense",l:tr("Expense",settings.aiLanguage),c:"#ef4444"},{k:"income",l:tr("Income",settings.aiLanguage),c:"#10b981"},{k:"transfer",l:tr("Transfer",settings.aiLanguage),c:"#3b82f6"}];
 
   return(
-    <Modal open={open} onClose={onClose} title="Add Transaction" t={t}>
+    <Modal open={open} onClose={onClose} title={tr("Add Transaction",settings.aiLanguage)} t={t}>
       <div style={{display:"flex",gap:8,marginBottom:16}}>
         {modes.map(({k,l,c})=>(
           <button key={k} onClick={()=>handleModeChange(k)} style={{flex:1,padding:"9px 0",borderRadius:10,border:`1.5px solid ${k===mode?c:t.border}`,background:k===mode?c+"22":"transparent",color:k===mode?c:t.textMuted,fontWeight:500,fontSize:13,cursor:"pointer",fontFamily:"system-ui,sans-serif"}}>{l}</button>
@@ -741,7 +838,7 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
         <div>
-          <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>Amount</div>
+          <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>{tr("Amount",settings.aiLanguage)}</div>
           <div style={{display:"flex",gap:8}}>
             <input value={amount} onChange={e=>setAmount(e.target.value)} placeholder="0.00" type="number" style={{flex:1,minWidth:0,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"13px 14px",fontSize:24,fontFamily:"monospace",fontWeight:500}}/>
             {/* Currency picker — only shown for income/expense, not transfers (transfers use source account's currency) */}
@@ -753,14 +850,14 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
           </div>
         </div>
         <div>
-          <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>From Account</div>
+          <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>{tr("From Account",settings.aiLanguage)}</div>
           <select value={accountId} onChange={e=>setAccountId(e.target.value)} style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"11px 14px",fontSize:15,cursor:"pointer"}}>
             {accounts.map(a=><option key={a.id} value={a.id}>{a.icon} {a.name} ({a.currency})</option>)}
           </select>
         </div>
         {mode==="transfer"&&(
           <div>
-            <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>To Account</div>
+            <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>{tr("To Account",settings.aiLanguage)}</div>
             <select value={toAccountId} onChange={e=>setToAccountId(e.target.value)} style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"11px 14px",fontSize:15,cursor:"pointer"}}>
               {accounts.filter(a=>a.id!==accountId).map(a=><option key={a.id} value={a.id}>{a.icon} {a.name} ({a.currency})</option>)}
             </select>
@@ -800,7 +897,7 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
         )}
         {mode!=="transfer"&&(
           <div>
-            <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>Category</div>
+            <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>{tr("Category",settings.aiLanguage)}</div>
             <select value={categoryId} onChange={e=>{setCategoryId(e.target.value);setSubcategoryId("");}} style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"11px 14px",fontSize:15,cursor:"pointer"}}>
               <option value="">— Select category —</option>
               {filteredCategories.map(c=><option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
@@ -809,7 +906,7 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
         )}
         {mode!=="transfer"&&selCat?.subcategories?.length>0&&(
           <div>
-            <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>Subcategory</div>
+            <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>{tr("Subcategory",settings.aiLanguage)}</div>
             <select value={subcategoryId} onChange={e=>setSubcategoryId(e.target.value)} style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"11px 14px",fontSize:15,cursor:"pointer"}}>
               <option value="">— Select subcategory —</option>
               {selCat.subcategories.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
@@ -818,23 +915,23 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
         )}
         <div style={{display:"flex",gap:10,width:"100%"}}>
           <div style={{flex:"3 1 0",minWidth:0,overflow:"hidden"}}>
-            <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>Date</div>
+            <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>{tr("Date",settings.aiLanguage)}</div>
             <input value={date} onChange={e=>setDate(e.target.value)} type="date" style={{width:"100%",maxWidth:"100%",display:"block",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"11px 8px",fontSize:13,boxSizing:"border-box",textAlign:"center",WebkitAppearance:"none"}}/>
           </div>
           <div style={{flex:"2 1 0",minWidth:0,overflow:"hidden"}}>
-            <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>Time</div>
+            <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>{tr("Time",settings.aiLanguage)}</div>
             <input value={time} onChange={e=>setTime(e.target.value)} type="time" style={{width:"100%",maxWidth:"100%",display:"block",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"11px 8px",fontSize:13,boxSizing:"border-box",textAlign:"center",WebkitAppearance:"none"}}/>
           </div>
         </div>
         <div>
-          <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>Note</div>
-          <input value={note} onChange={e=>setNote(e.target.value)} placeholder="Add a note..." style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"11px 14px",fontSize:15}}/>
+          <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>{tr("Note",settings.aiLanguage)}</div>
+          <input value={note} onChange={e=>setNote(e.target.value)} placeholder={tr("Add a note...",settings.aiLanguage)} style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"11px 14px",fontSize:15}}/>
         </div>
         <div style={{marginTop:4}}>
           {loading?(
             <div style={{textAlign:"center",padding:"14px 0",color:t.accent,fontSize:14}}>{(PETS[settings.aiPet]||PETS.dog).emoji} Your {(PETS[settings.aiPet]||PETS.dog).name} is thinking...</div>
           ):(
-            <button onClick={handleSave} style={{width:"100%",background:"#10b981",color:"#fff",border:"none",borderRadius:12,padding:"14px",fontSize:16,fontWeight:600,cursor:"pointer",fontFamily:"system-ui,sans-serif"}}>Save Transaction</button>
+            <button onClick={handleSave} style={{width:"100%",background:"#10b981",color:"#fff",border:"none",borderRadius:12,padding:"14px",fontSize:16,fontWeight:600,cursor:"pointer",fontFamily:"system-ui,sans-serif"}}>{tr("Save Transaction",settings.aiLanguage)}</button>
           )}
         </div>
       </div>
@@ -859,7 +956,7 @@ function TxnDetail({txn,open,onClose,accounts,categories,onDelete,settings,t}){
     txn.note?{l:"Note",v:txn.note}:null,
   ].filter(Boolean);
   return(
-    <Modal open={open} onClose={onClose} title="Transaction Detail" t={t}>
+    <Modal open={open} onClose={onClose} title={tr("Transaction Detail",settings?.aiLanguage)} t={t}>
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
         <div style={{textAlign:"center",padding:"16px 0"}}>
           <div style={{fontSize:42,marginBottom:8}}>{cat?.icon||"💸"}</div>
@@ -878,7 +975,18 @@ function TxnDetail({txn,open,onClose,accounts,categories,onDelete,settings,t}){
             <div style={{fontSize:14,color:t.textMuted,fontStyle:"italic",lineHeight:1.6}}>{txn.aiComment}</div>
           </div>
         )}
-        <button onClick={()=>{haptic("heavy");onDelete(txn.id);onClose();}} style={{width:"100%",background:"transparent",color:"#ef4444",border:"1.5px solid #ef4444",borderRadius:12,padding:"13px",fontSize:15,fontWeight:500,cursor:"pointer",fontFamily:"system-ui,sans-serif",marginTop:4}}>Delete Transaction</button>
+        <button onClick={()=>{
+          // Localized confirm message — using window.confirm since Telegram Mini Apps support it natively
+          const lang=settings?.aiLanguage||"English";
+          const confirmMsg=lang==="Russian"?"Точно удалить эту операцию? Это действие необратимо.":
+                          lang==="Kazakh"?"Бұл операцияны жою керек пе? Бұл әрекетті қайтаруға болмайды.":
+                          "Delete this transaction? This action cannot be undone.";
+          if(confirm(confirmMsg)){
+            haptic("heavy");
+            onDelete(txn.id);
+            onClose();
+          }
+        }} style={{width:"100%",background:"transparent",color:"#ef4444",border:"1.5px solid #ef4444",borderRadius:12,padding:"13px",fontSize:15,fontWeight:500,cursor:"pointer",fontFamily:"system-ui,sans-serif",marginTop:4}}>{tr("Delete Transaction",settings?.aiLanguage)}</button>
       </div>
     </Modal>
   );
@@ -915,7 +1023,7 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,settings,onS
               ?<img src={settings.profilePicture} style={{width:38,height:38,borderRadius:"50%",objectFit:"cover"}} alt="profile"/>
               :<div style={{width:38,height:38,borderRadius:"50%",background:"#10b981",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:18,color:"#fff"}}>{(settings.displayName||"U")[0]}</div>}
             <div>
-              <div style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>Welcome back</div>
+              <div style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>{tr("Welcome back",settings.aiLanguage)}</div>
               <div style={{fontSize:16,fontWeight:600,color:"#fff",fontFamily:"system-ui,sans-serif"}}>{settings.displayName}</div>
             </div>
           </div>
@@ -925,7 +1033,7 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,settings,onS
           </div>
         </div>
         <div style={{textAlign:"center",marginBottom:20}}>
-          <div style={{fontSize:13,color:"rgba(255,255,255,0.5)",marginBottom:8}}>Total Balance</div>
+          <div style={{fontSize:13,color:"rgba(255,255,255,0.5)",marginBottom:8}}>{tr("Total Balance",settings.aiLanguage)}</div>
           <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
             <div style={{fontSize:38,fontWeight:700,color:"#fff",fontFamily:"system-ui,sans-serif",letterSpacing:"-1px"}}>
               {balanceHidden?"••••••":fmtAmt(total,selectedCurrency)}
@@ -936,18 +1044,18 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,settings,onS
           </div>
           <div style={{display:"flex",justifyContent:"center",gap:28,marginTop:14}}>
             <div style={{textAlign:"center"}}>
-              <div style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>Income</div>
+              <div style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>{tr("Income",settings.aiLanguage)}</div>
               <div style={{fontSize:16,fontWeight:600,color:"#10b981"}}>{fmtAmt(fromKZT(monthIncome,selectedCurrency,exchangeRates),selectedCurrency)}</div>
             </div>
             <div style={{width:1,background:"rgba(255,255,255,0.15)"}}/>
             <div style={{textAlign:"center"}}>
-              <div style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>Spent</div>
+              <div style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>{tr("Spent",settings.aiLanguage)}</div>
               <div style={{fontSize:16,fontWeight:600,color:"#ef4444"}}>{fmtAmt(fromKZT(monthExpense,selectedCurrency,exchangeRates),selectedCurrency)}</div>
             </div>
           </div>
         </div>
         <div style={{display:"flex",gap:8}}>
-          {[{l:"＋ Income",m:"income",c:"#10b981"},{l:"－ Expense",m:"expense",c:"#ef4444"},{l:"⇄ Transfer",m:"transfer",c:"#3b82f6"}].map(({l,m,c})=>(
+          {[{l:`＋ ${tr("Income",settings.aiLanguage)}`,m:"income",c:"#10b981"},{l:`－ ${tr("Expense",settings.aiLanguage)}`,m:"expense",c:"#ef4444"},{l:`⇄ ${tr("Transfer",settings.aiLanguage)}`,m:"transfer",c:"#3b82f6"}].map(({l,m,c})=>(
             <button key={m} onClick={()=>{haptic();onAddTxn(m);}} style={{flex:1,padding:"10px 0",borderRadius:12,border:`1.5px solid ${c}`,background:`${c}22`,color:c,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"system-ui,sans-serif"}}>{l}</button>
           ))}
         </div>
@@ -956,14 +1064,14 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,settings,onS
       <div style={{padding:"16px 16px 0"}}>
         {/* Quote */}
         <div style={{background:"linear-gradient(135deg,#064e3b,#065f46)",borderRadius:14,padding:"14px 16px",marginBottom:16}}>
-          <div style={{fontSize:11,color:"rgba(255,255,255,0.5)",marginBottom:4}}>💡 Financial Wisdom</div>
+          <div style={{fontSize:11,color:"rgba(255,255,255,0.5)",marginBottom:4}}>💡 {tr("Financial Wisdom",settings.aiLanguage)}</div>
           <div style={{fontSize:14,color:"#fff",lineHeight:1.55,fontStyle:"italic"}}>"{quote.q}"</div>
           <div style={{fontSize:11,color:"rgba(255,255,255,0.5)",marginTop:6}}>— {quote.a}</div>
         </div>
 
         {/* Accounts */}
         <div style={{marginBottom:16}}>
-          <div style={{fontSize:16,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif",marginBottom:10}}>My Accounts</div>
+          <div style={{fontSize:16,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif",marginBottom:10}}>{tr("My Accounts",settings.aiLanguage)}</div>
           <div style={{display:"flex",gap:10,overflowX:"auto",paddingBottom:6}}>
             {accounts.map(acc=>(
               <div key={acc.id} style={{minWidth:148,background:t.bgCard,borderRadius:14,padding:"14px",border:`1px solid ${t.border}`,flexShrink:0}}>
@@ -981,7 +1089,7 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,settings,onS
         {/* Upcoming Fixed */}
         {upcomingFixed.length>0&&(
           <div style={{marginBottom:16}}>
-            <div style={{fontSize:16,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif",marginBottom:10}}>📅 Upcoming Fixed</div>
+            <div style={{fontSize:16,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif",marginBottom:10}}>📅 {tr("Upcoming Fixed",settings.aiLanguage)}</div>
             <div style={{background:t.bgCard,borderRadius:14,border:`1px solid ${t.border}`,overflow:"hidden"}}>
               {upcomingFixed.map((fe,i)=>(
                 <div key={fe.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px",borderBottom:i<upcomingFixed.length-1?`1px solid ${t.border}`:"none"}}>
@@ -993,7 +1101,7 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,settings,onS
                 </div>
               ))}
               <div style={{padding:"12px 14px",background:t.bgCard2,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <span style={{fontSize:13,color:t.textMuted}}>Remaining budget</span>
+                <span style={{fontSize:13,color:t.textMuted}}>{tr("Remaining budget",settings.aiLanguage)}</span>
                 <span style={{fontSize:15,fontWeight:700,color:remaining>=0?"#10b981":"#ef4444",fontFamily:"monospace"}}>{fmtAmt(fromKZT(remaining,selectedCurrency,exchangeRates),selectedCurrency)}</span>
               </div>
             </div>
@@ -1002,7 +1110,7 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,settings,onS
 
         {/* Recent Transactions */}
         <div style={{marginBottom:8}}>
-          <div style={{fontSize:16,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif",marginBottom:10}}>Recent Transactions</div>
+          <div style={{fontSize:16,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif",marginBottom:10}}>{tr("Recent Transactions",settings.aiLanguage)}</div>
           {recentTxns.length===0&&(
             <div style={{textAlign:"center",padding:"32px",color:t.textMuted,fontSize:14}}>
               <div style={{fontSize:32,marginBottom:8}}>💰</div>
@@ -1147,7 +1255,7 @@ function AnalyticsScreen({transactions,categories,settings,t}){
 
   return(
     <div style={{height:"100%",overflow:"auto",padding:"calc(env(safe-area-inset-top, 20px) + 40px) 16px 16px"}}>
-      <div style={{fontFamily:"system-ui,sans-serif",fontSize:22,fontWeight:700,color:t.text,marginBottom:16}}>Analytics</div>
+      <div style={{fontFamily:"system-ui,sans-serif",fontSize:22,fontWeight:700,color:t.text,marginBottom:16}}>{tr("Analytics",settings.aiLanguage)}</div>
 
       {/* ─────── Pie Chart card with own date range ─────── */}
       <div style={{background:t.bgCard,borderRadius:16,padding:"16px",border:`1px solid ${t.border}`,marginBottom:16}}>
@@ -1283,7 +1391,7 @@ function HistoryScreen({transactions,accounts,categories,settings,onTxnClick,t})
 
   return(
     <div style={{height:"100%",overflow:"auto",padding:"calc(env(safe-area-inset-top, 20px) + 40px) 16px 16px"}}>
-      <div style={{fontFamily:"system-ui,sans-serif",fontSize:22,fontWeight:700,color:t.text,marginBottom:16}}>History</div>
+      <div style={{fontFamily:"system-ui,sans-serif",fontSize:22,fontWeight:700,color:t.text,marginBottom:16}}>{tr("History",settings.aiLanguage)}</div>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,background:t.bgCard,borderRadius:12,padding:"10px 16px",border:`1px solid ${t.border}`}}>
         <button onClick={prevMonth} style={{background:"none",border:"none",color:t.accent,fontSize:22,cursor:"pointer",padding:"0 6px"}}>‹</button>
         <span style={{fontSize:16,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif"}}>{MONTHS_FULL[selMonth]} {selYear}</span>
@@ -1385,7 +1493,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
 
   return(
     <div style={{height:"100%",overflow:"auto",padding:"calc(env(safe-area-inset-top, 20px) + 40px) 16px 16px"}}>
-      <div style={{fontFamily:"system-ui,sans-serif",fontSize:22,fontWeight:700,color:t.text,marginBottom:16}}>Settings</div>
+      <div style={{fontFamily:"system-ui,sans-serif",fontSize:22,fontWeight:700,color:t.text,marginBottom:16}}>{tr("Settings",settings.aiLanguage)}</div>
 
       {/* Profile */}
       <div style={{background:t.bgCard,borderRadius:16,padding:"16px",border:`1px solid ${t.border}`,marginBottom:12,display:"flex",alignItems:"center",gap:14}}>
@@ -1412,7 +1520,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
         ))}
       </div>
 
-      <Section k="accounts" label="Accounts" icon="🏦"/>
+      <Section k="accounts" label={tr("Accounts",settings.aiLanguage)} icon="🏦"/>
       {sec==="accounts"&&(
         <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:8}}>
           {accounts.map(a=>{
@@ -1467,7 +1575,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
         </div>
       )}
 
-      <Section k="categories" label="Categories" icon="🗂️"/>
+      <Section k="categories" label={tr("Categories",settings.aiLanguage)} icon="🗂️"/>
       {sec==="categories"&&(
         <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:8}}>
           {/* Group categories by type for clearer Income vs Expense separation */}
@@ -1558,7 +1666,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
         </div>
       )}
 
-      <Section k="fixed" label="Fixed Expenses" icon="📅"/>
+      <Section k="fixed" label={tr("Fixed Expenses",settings.aiLanguage)} icon="📅"/>
       {sec==="fixed"&&(
         <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:8}}>
           {fixedExpenses.map(fe=>(
@@ -1581,7 +1689,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
         </div>
       )}
 
-      <Section k="ai" label="AI Coach Settings" icon="🤖"/>
+      <Section k="ai" label={tr("AI Coach Settings",settings.aiLanguage)} icon="🤖"/>
       {sec==="ai"&&(
         <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:8,display:"flex",flexDirection:"column",gap:10}}>
           <div>
@@ -1618,7 +1726,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
         </div>
       )}
 
-      <Section k="currencies" label="Exchange Rates" icon="💱"/>
+      <Section k="currencies" label={tr("Exchange Rates",settings.aiLanguage)} icon="💱"/>
       {sec==="currencies"&&(
         <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:8}}>
           <div style={{fontSize:11,color:t.textMuted,marginBottom:10,lineHeight:1.5}}>
@@ -2071,13 +2179,14 @@ function App(){
     return kztValue/(rates[toCurrency]||1);
   },[settings.exchangeRates]);
 
+  // Apply the balance impact of a transaction to the accounts list.
+  // Used both for normal save and for the "edit" flow (apply new) / "delete" flow (reverse).
   const handleSaveTxn=useCallback((txn)=>{
     const newTxns=[...transactions,txn];
     setTransactions(newTxns);
     STORE.saveTransaction(txn).catch(()=>{});
     const updAcc=accounts.map(a=>{
       if(txn.type==="income"&&a.id===txn.accountId){
-        // Convert transaction currency into the account's native currency before adjusting balance
         const delta=convertAmount(txn.amount,txn.currency,a.currency);
         return{...a,balance:a.balance+delta};
       }
@@ -2087,11 +2196,9 @@ function App(){
       }
       if(txn.type==="transfer"){
         if(a.id===txn.accountId){
-          // Deduct the outgoing amount (already in source account's currency)
           return{...a,balance:a.balance-txn.amount};
         }
         if(a.id===txn.toAccountId){
-          // Add the converted amount — use precomputed toAmount if available, otherwise convert now
           const incoming=txn.toAmount!=null?txn.toAmount:convertAmount(txn.amount,txn.currency,a.currency);
           return{...a,balance:a.balance+incoming};
         }
@@ -2265,12 +2372,13 @@ function App(){
     return <OnboardingScreen tgUser={tgUser} onComplete={handleOnboardingComplete}/>;
   }
 
+  const lang=settings.aiLanguage||"English";
   const TABS=[
-    {k:"home",icon:"🏠",label:"Home"},
-    {k:"analytics",icon:"📊",label:"Analytics"},
+    {k:"home",icon:"🏠",label:tr("Home",lang)},
+    {k:"analytics",icon:"📊",label:tr("Analytics",lang)},
     {k:"__add__",icon:"＋",label:""},
-    {k:"history",icon:"📋",label:"History"},
-    {k:"settings",icon:"⚙️",label:"Settings"},
+    {k:"history",icon:"📋",label:tr("History",lang)},
+    {k:"settings",icon:"⚙️",label:tr("Settings",lang)},
   ];
 
   return(
