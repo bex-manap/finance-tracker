@@ -226,6 +226,8 @@ const DEF_SETTINGS={
   aiPet:"dog",
   aiTone:"medium",
   aiLanguage:"English",
+  // App UI language — separate from AI language. Defaults to detected system/Telegram language.
+  uiLanguage:null, // null means "auto-detect"; resolved at runtime in App component
   aiCustomPrompt:"",
   onboarded:false,
   // Exchange rates normalized to "1 UNIT = X KZT". Updated on app load via live API.
@@ -537,6 +539,8 @@ const TRANSLATIONS={
     "Add new account":"Новый счёт","Add new category":"Новая категория",
     "Tone":"Тон","Language":"Язык","Custom Prompt Prefix":"Дополнение к промпту",
     "Your AI Companion":"Ваш ИИ-питомец","Refresh rates now":"Обновить курсы",
+    "App Language":"Язык приложения","AI Language":"Язык ИИ",
+    "Auto (System)":"Авто (система)",
     // Misc
     "Save":"Сохранить","Cancel":"Отмена","Delete":"Удалить","Edit":"Изменить",
     "Skip":"Пропустить","Continue":"Далее","Back":"Назад",
@@ -575,6 +579,8 @@ const TRANSLATIONS={
     "Add new account":"Жаңа шот","Add new category":"Жаңа санат",
     "Tone":"Стиль","Language":"Тіл","Custom Prompt Prefix":"Промптқа қосымша",
     "Your AI Companion":"ЖИ серігіңіз","Refresh rates now":"Бағамдарды жаңарту",
+    "App Language":"Қолданба тілі","AI Language":"ЖИ тілі",
+    "Auto (System)":"Авто (жүйе)",
     "Save":"Сақтау","Cancel":"Болдырмау","Delete":"Жою","Edit":"Өзгерту",
     "Skip":"Өткізу","Continue":"Жалғастыру","Back":"Артқа",
     "Bank":"Банк","Crypto":"Крипто",
@@ -583,6 +589,20 @@ const TRANSLATIONS={
 };
 // Translation function: returns translated string or falls back to the original English
 const tr=(key,lang)=>(TRANSLATIONS[lang||"English"]||{})[key]||key;
+
+// Detect the user's system language and map to one of our supported UI languages.
+// Priority: Telegram WebApp language → browser language → English fallback.
+// Maps any "ru-*" code to Russian, "kk-*" to Kazakh, everything else → English.
+const detectSystemLanguage=()=>{
+  try{
+    const tgLang=window.Telegram?.WebApp?.initDataUnsafe?.user?.language_code;
+    const browserLang=navigator.language||navigator.userLanguage||"";
+    const code=(tgLang||browserLang||"").toLowerCase();
+    if(code.startsWith("ru"))return"Russian";
+    if(code.startsWith("kk")||code.startsWith("kz"))return"Kazakh";
+    return"English";
+  }catch(e){return"English";}
+};
 
 // ── EMOJI PICKER ──
 // Compact emoji selector: tap-to-pick from common categories OR free-type any emoji.
@@ -827,10 +847,10 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
     onClose();
   };
 
-  const modes=[{k:"expense",l:tr("Expense",settings.aiLanguage),c:"#ef4444"},{k:"income",l:tr("Income",settings.aiLanguage),c:"#10b981"},{k:"transfer",l:tr("Transfer",settings.aiLanguage),c:"#3b82f6"}];
+  const modes=[{k:"expense",l:tr("Expense",settings.uiLanguage),c:"#ef4444"},{k:"income",l:tr("Income",settings.uiLanguage),c:"#10b981"},{k:"transfer",l:tr("Transfer",settings.uiLanguage),c:"#3b82f6"}];
 
   return(
-    <Modal open={open} onClose={onClose} title={tr("Add Transaction",settings.aiLanguage)} t={t}>
+    <Modal open={open} onClose={onClose} title={tr("Add Transaction",settings.uiLanguage)} t={t}>
       <div style={{display:"flex",gap:8,marginBottom:16}}>
         {modes.map(({k,l,c})=>(
           <button key={k} onClick={()=>handleModeChange(k)} style={{flex:1,padding:"9px 0",borderRadius:10,border:`1.5px solid ${k===mode?c:t.border}`,background:k===mode?c+"22":"transparent",color:k===mode?c:t.textMuted,fontWeight:500,fontSize:13,cursor:"pointer",fontFamily:"system-ui,sans-serif"}}>{l}</button>
@@ -838,7 +858,7 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
         <div>
-          <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>{tr("Amount",settings.aiLanguage)}</div>
+          <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>{tr("Amount",settings.uiLanguage)}</div>
           <div style={{display:"flex",gap:8}}>
             <input value={amount} onChange={e=>setAmount(e.target.value)} placeholder="0.00" type="number" style={{flex:1,minWidth:0,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"13px 14px",fontSize:24,fontFamily:"monospace",fontWeight:500}}/>
             {/* Currency picker — only shown for income/expense, not transfers (transfers use source account's currency) */}
@@ -850,14 +870,14 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
           </div>
         </div>
         <div>
-          <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>{tr("From Account",settings.aiLanguage)}</div>
+          <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>{tr("From Account",settings.uiLanguage)}</div>
           <select value={accountId} onChange={e=>setAccountId(e.target.value)} style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"11px 14px",fontSize:15,cursor:"pointer"}}>
             {accounts.map(a=><option key={a.id} value={a.id}>{a.icon} {a.name} ({a.currency})</option>)}
           </select>
         </div>
         {mode==="transfer"&&(
           <div>
-            <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>{tr("To Account",settings.aiLanguage)}</div>
+            <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>{tr("To Account",settings.uiLanguage)}</div>
             <select value={toAccountId} onChange={e=>setToAccountId(e.target.value)} style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"11px 14px",fontSize:15,cursor:"pointer"}}>
               {accounts.filter(a=>a.id!==accountId).map(a=><option key={a.id} value={a.id}>{a.icon} {a.name} ({a.currency})</option>)}
             </select>
@@ -897,7 +917,7 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
         )}
         {mode!=="transfer"&&(
           <div>
-            <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>{tr("Category",settings.aiLanguage)}</div>
+            <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>{tr("Category",settings.uiLanguage)}</div>
             <select value={categoryId} onChange={e=>{setCategoryId(e.target.value);setSubcategoryId("");}} style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"11px 14px",fontSize:15,cursor:"pointer"}}>
               <option value="">— Select category —</option>
               {filteredCategories.map(c=><option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
@@ -906,7 +926,7 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
         )}
         {mode!=="transfer"&&selCat?.subcategories?.length>0&&(
           <div>
-            <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>{tr("Subcategory",settings.aiLanguage)}</div>
+            <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>{tr("Subcategory",settings.uiLanguage)}</div>
             <select value={subcategoryId} onChange={e=>setSubcategoryId(e.target.value)} style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"11px 14px",fontSize:15,cursor:"pointer"}}>
               <option value="">— Select subcategory —</option>
               {selCat.subcategories.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
@@ -915,23 +935,23 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
         )}
         <div style={{display:"flex",gap:10,width:"100%"}}>
           <div style={{flex:"3 1 0",minWidth:0,overflow:"hidden"}}>
-            <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>{tr("Date",settings.aiLanguage)}</div>
+            <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>{tr("Date",settings.uiLanguage)}</div>
             <input value={date} onChange={e=>setDate(e.target.value)} type="date" style={{width:"100%",maxWidth:"100%",display:"block",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"11px 8px",fontSize:13,boxSizing:"border-box",textAlign:"center",WebkitAppearance:"none"}}/>
           </div>
           <div style={{flex:"2 1 0",minWidth:0,overflow:"hidden"}}>
-            <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>{tr("Time",settings.aiLanguage)}</div>
+            <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>{tr("Time",settings.uiLanguage)}</div>
             <input value={time} onChange={e=>setTime(e.target.value)} type="time" style={{width:"100%",maxWidth:"100%",display:"block",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"11px 8px",fontSize:13,boxSizing:"border-box",textAlign:"center",WebkitAppearance:"none"}}/>
           </div>
         </div>
         <div>
-          <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>{tr("Note",settings.aiLanguage)}</div>
-          <input value={note} onChange={e=>setNote(e.target.value)} placeholder={tr("Add a note...",settings.aiLanguage)} style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"11px 14px",fontSize:15}}/>
+          <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>{tr("Note",settings.uiLanguage)}</div>
+          <input value={note} onChange={e=>setNote(e.target.value)} placeholder={tr("Add a note...",settings.uiLanguage)} style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"11px 14px",fontSize:15}}/>
         </div>
         <div style={{marginTop:4}}>
           {loading?(
             <div style={{textAlign:"center",padding:"14px 0",color:t.accent,fontSize:14}}>{(PETS[settings.aiPet]||PETS.dog).emoji} Your {(PETS[settings.aiPet]||PETS.dog).name} is thinking...</div>
           ):(
-            <button onClick={handleSave} style={{width:"100%",background:"#10b981",color:"#fff",border:"none",borderRadius:12,padding:"14px",fontSize:16,fontWeight:600,cursor:"pointer",fontFamily:"system-ui,sans-serif"}}>{tr("Save Transaction",settings.aiLanguage)}</button>
+            <button onClick={handleSave} style={{width:"100%",background:"#10b981",color:"#fff",border:"none",borderRadius:12,padding:"14px",fontSize:16,fontWeight:600,cursor:"pointer",fontFamily:"system-ui,sans-serif"}}>{tr("Save Transaction",settings.uiLanguage)}</button>
           )}
         </div>
       </div>
@@ -956,7 +976,7 @@ function TxnDetail({txn,open,onClose,accounts,categories,onDelete,settings,t}){
     txn.note?{l:"Note",v:txn.note}:null,
   ].filter(Boolean);
   return(
-    <Modal open={open} onClose={onClose} title={tr("Transaction Detail",settings?.aiLanguage)} t={t}>
+    <Modal open={open} onClose={onClose} title={tr("Transaction Detail",settings?.uiLanguage)} t={t}>
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
         <div style={{textAlign:"center",padding:"16px 0"}}>
           <div style={{fontSize:42,marginBottom:8}}>{cat?.icon||"💸"}</div>
@@ -977,7 +997,7 @@ function TxnDetail({txn,open,onClose,accounts,categories,onDelete,settings,t}){
         )}
         <button onClick={()=>{
           // Localized confirm message — using window.confirm since Telegram Mini Apps support it natively
-          const lang=settings?.aiLanguage||"English";
+          const lang=settings?.uiLanguage||"English";
           const confirmMsg=lang==="Russian"?"Точно удалить эту операцию? Это действие необратимо.":
                           lang==="Kazakh"?"Бұл операцияны жою керек пе? Бұл әрекетті қайтаруға болмайды.":
                           "Delete this transaction? This action cannot be undone.";
@@ -986,7 +1006,7 @@ function TxnDetail({txn,open,onClose,accounts,categories,onDelete,settings,t}){
             onDelete(txn.id);
             onClose();
           }
-        }} style={{width:"100%",background:"transparent",color:"#ef4444",border:"1.5px solid #ef4444",borderRadius:12,padding:"13px",fontSize:15,fontWeight:500,cursor:"pointer",fontFamily:"system-ui,sans-serif",marginTop:4}}>{tr("Delete Transaction",settings?.aiLanguage)}</button>
+        }} style={{width:"100%",background:"transparent",color:"#ef4444",border:"1.5px solid #ef4444",borderRadius:12,padding:"13px",fontSize:15,fontWeight:500,cursor:"pointer",fontFamily:"system-ui,sans-serif",marginTop:4}}>{tr("Delete Transaction",settings?.uiLanguage)}</button>
       </div>
     </Modal>
   );
@@ -1023,7 +1043,7 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,settings,onS
               ?<img src={settings.profilePicture} style={{width:38,height:38,borderRadius:"50%",objectFit:"cover"}} alt="profile"/>
               :<div style={{width:38,height:38,borderRadius:"50%",background:"#10b981",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:18,color:"#fff"}}>{(settings.displayName||"U")[0]}</div>}
             <div>
-              <div style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>{tr("Welcome back",settings.aiLanguage)}</div>
+              <div style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>{tr("Welcome back",settings.uiLanguage)}</div>
               <div style={{fontSize:16,fontWeight:600,color:"#fff",fontFamily:"system-ui,sans-serif"}}>{settings.displayName}</div>
             </div>
           </div>
@@ -1033,7 +1053,7 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,settings,onS
           </div>
         </div>
         <div style={{textAlign:"center",marginBottom:20}}>
-          <div style={{fontSize:13,color:"rgba(255,255,255,0.5)",marginBottom:8}}>{tr("Total Balance",settings.aiLanguage)}</div>
+          <div style={{fontSize:13,color:"rgba(255,255,255,0.5)",marginBottom:8}}>{tr("Total Balance",settings.uiLanguage)}</div>
           <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
             <div style={{fontSize:38,fontWeight:700,color:"#fff",fontFamily:"system-ui,sans-serif",letterSpacing:"-1px"}}>
               {balanceHidden?"••••••":fmtAmt(total,selectedCurrency)}
@@ -1044,18 +1064,18 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,settings,onS
           </div>
           <div style={{display:"flex",justifyContent:"center",gap:28,marginTop:14}}>
             <div style={{textAlign:"center"}}>
-              <div style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>{tr("Income",settings.aiLanguage)}</div>
+              <div style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>{tr("Income",settings.uiLanguage)}</div>
               <div style={{fontSize:16,fontWeight:600,color:"#10b981"}}>{fmtAmt(fromKZT(monthIncome,selectedCurrency,exchangeRates),selectedCurrency)}</div>
             </div>
             <div style={{width:1,background:"rgba(255,255,255,0.15)"}}/>
             <div style={{textAlign:"center"}}>
-              <div style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>{tr("Spent",settings.aiLanguage)}</div>
+              <div style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>{tr("Spent",settings.uiLanguage)}</div>
               <div style={{fontSize:16,fontWeight:600,color:"#ef4444"}}>{fmtAmt(fromKZT(monthExpense,selectedCurrency,exchangeRates),selectedCurrency)}</div>
             </div>
           </div>
         </div>
         <div style={{display:"flex",gap:8}}>
-          {[{l:`＋ ${tr("Income",settings.aiLanguage)}`,m:"income",c:"#10b981"},{l:`－ ${tr("Expense",settings.aiLanguage)}`,m:"expense",c:"#ef4444"},{l:`⇄ ${tr("Transfer",settings.aiLanguage)}`,m:"transfer",c:"#3b82f6"}].map(({l,m,c})=>(
+          {[{l:`＋ ${tr("Income",settings.uiLanguage)}`,m:"income",c:"#10b981"},{l:`－ ${tr("Expense",settings.uiLanguage)}`,m:"expense",c:"#ef4444"},{l:`⇄ ${tr("Transfer",settings.uiLanguage)}`,m:"transfer",c:"#3b82f6"}].map(({l,m,c})=>(
             <button key={m} onClick={()=>{haptic();onAddTxn(m);}} style={{flex:1,padding:"10px 0",borderRadius:12,border:`1.5px solid ${c}`,background:`${c}22`,color:c,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"system-ui,sans-serif"}}>{l}</button>
           ))}
         </div>
@@ -1064,14 +1084,14 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,settings,onS
       <div style={{padding:"16px 16px 0"}}>
         {/* Quote */}
         <div style={{background:"linear-gradient(135deg,#064e3b,#065f46)",borderRadius:14,padding:"14px 16px",marginBottom:16}}>
-          <div style={{fontSize:11,color:"rgba(255,255,255,0.5)",marginBottom:4}}>💡 {tr("Financial Wisdom",settings.aiLanguage)}</div>
+          <div style={{fontSize:11,color:"rgba(255,255,255,0.5)",marginBottom:4}}>💡 {tr("Financial Wisdom",settings.uiLanguage)}</div>
           <div style={{fontSize:14,color:"#fff",lineHeight:1.55,fontStyle:"italic"}}>"{quote.q}"</div>
           <div style={{fontSize:11,color:"rgba(255,255,255,0.5)",marginTop:6}}>— {quote.a}</div>
         </div>
 
         {/* Accounts */}
         <div style={{marginBottom:16}}>
-          <div style={{fontSize:16,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif",marginBottom:10}}>{tr("My Accounts",settings.aiLanguage)}</div>
+          <div style={{fontSize:16,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif",marginBottom:10}}>{tr("My Accounts",settings.uiLanguage)}</div>
           <div style={{display:"flex",gap:10,overflowX:"auto",paddingBottom:6}}>
             {accounts.map(acc=>(
               <div key={acc.id} style={{minWidth:148,background:t.bgCard,borderRadius:14,padding:"14px",border:`1px solid ${t.border}`,flexShrink:0}}>
@@ -1089,7 +1109,7 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,settings,onS
         {/* Upcoming Fixed */}
         {upcomingFixed.length>0&&(
           <div style={{marginBottom:16}}>
-            <div style={{fontSize:16,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif",marginBottom:10}}>📅 {tr("Upcoming Fixed",settings.aiLanguage)}</div>
+            <div style={{fontSize:16,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif",marginBottom:10}}>📅 {tr("Upcoming Fixed",settings.uiLanguage)}</div>
             <div style={{background:t.bgCard,borderRadius:14,border:`1px solid ${t.border}`,overflow:"hidden"}}>
               {upcomingFixed.map((fe,i)=>(
                 <div key={fe.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px",borderBottom:i<upcomingFixed.length-1?`1px solid ${t.border}`:"none"}}>
@@ -1101,7 +1121,7 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,settings,onS
                 </div>
               ))}
               <div style={{padding:"12px 14px",background:t.bgCard2,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <span style={{fontSize:13,color:t.textMuted}}>{tr("Remaining budget",settings.aiLanguage)}</span>
+                <span style={{fontSize:13,color:t.textMuted}}>{tr("Remaining budget",settings.uiLanguage)}</span>
                 <span style={{fontSize:15,fontWeight:700,color:remaining>=0?"#10b981":"#ef4444",fontFamily:"monospace"}}>{fmtAmt(fromKZT(remaining,selectedCurrency,exchangeRates),selectedCurrency)}</span>
               </div>
             </div>
@@ -1110,7 +1130,7 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,settings,onS
 
         {/* Recent Transactions */}
         <div style={{marginBottom:8}}>
-          <div style={{fontSize:16,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif",marginBottom:10}}>{tr("Recent Transactions",settings.aiLanguage)}</div>
+          <div style={{fontSize:16,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif",marginBottom:10}}>{tr("Recent Transactions",settings.uiLanguage)}</div>
           {recentTxns.length===0&&(
             <div style={{textAlign:"center",padding:"32px",color:t.textMuted,fontSize:14}}>
               <div style={{fontSize:32,marginBottom:8}}>💰</div>
@@ -1255,7 +1275,7 @@ function AnalyticsScreen({transactions,categories,settings,t}){
 
   return(
     <div style={{height:"100%",overflow:"auto",padding:"calc(env(safe-area-inset-top, 20px) + 40px) 16px 16px"}}>
-      <div style={{fontFamily:"system-ui,sans-serif",fontSize:22,fontWeight:700,color:t.text,marginBottom:16}}>{tr("Analytics",settings.aiLanguage)}</div>
+      <div style={{fontFamily:"system-ui,sans-serif",fontSize:22,fontWeight:700,color:t.text,marginBottom:16}}>{tr("Analytics",settings.uiLanguage)}</div>
 
       {/* ─────── Pie Chart card with own date range ─────── */}
       <div style={{background:t.bgCard,borderRadius:16,padding:"16px",border:`1px solid ${t.border}`,marginBottom:16}}>
@@ -1391,7 +1411,7 @@ function HistoryScreen({transactions,accounts,categories,settings,onTxnClick,t})
 
   return(
     <div style={{height:"100%",overflow:"auto",padding:"calc(env(safe-area-inset-top, 20px) + 40px) 16px 16px"}}>
-      <div style={{fontFamily:"system-ui,sans-serif",fontSize:22,fontWeight:700,color:t.text,marginBottom:16}}>{tr("History",settings.aiLanguage)}</div>
+      <div style={{fontFamily:"system-ui,sans-serif",fontSize:22,fontWeight:700,color:t.text,marginBottom:16}}>{tr("History",settings.uiLanguage)}</div>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,background:t.bgCard,borderRadius:12,padding:"10px 16px",border:`1px solid ${t.border}`}}>
         <button onClick={prevMonth} style={{background:"none",border:"none",color:t.accent,fontSize:22,cursor:"pointer",padding:"0 6px"}}>‹</button>
         <span style={{fontSize:16,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif"}}>{MONTHS_FULL[selMonth]} {selYear}</span>
@@ -1493,7 +1513,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
 
   return(
     <div style={{height:"100%",overflow:"auto",padding:"calc(env(safe-area-inset-top, 20px) + 40px) 16px 16px"}}>
-      <div style={{fontFamily:"system-ui,sans-serif",fontSize:22,fontWeight:700,color:t.text,marginBottom:16}}>{tr("Settings",settings.aiLanguage)}</div>
+      <div style={{fontFamily:"system-ui,sans-serif",fontSize:22,fontWeight:700,color:t.text,marginBottom:16}}>{tr("Settings",settings.uiLanguage)}</div>
 
       {/* Profile */}
       <div style={{background:t.bgCard,borderRadius:16,padding:"16px",border:`1px solid ${t.border}`,marginBottom:12,display:"flex",alignItems:"center",gap:14}}>
@@ -1520,7 +1540,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
         ))}
       </div>
 
-      <Section k="accounts" label={tr("Accounts",settings.aiLanguage)} icon="🏦"/>
+      <Section k="accounts" label={tr("Accounts",settings.uiLanguage)} icon="🏦"/>
       {sec==="accounts"&&(
         <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:8}}>
           {accounts.map(a=>{
@@ -1575,7 +1595,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
         </div>
       )}
 
-      <Section k="categories" label={tr("Categories",settings.aiLanguage)} icon="🗂️"/>
+      <Section k="categories" label={tr("Categories",settings.uiLanguage)} icon="🗂️"/>
       {sec==="categories"&&(
         <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:8}}>
           {/* Group categories by type for clearer Income vs Expense separation */}
@@ -1666,7 +1686,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
         </div>
       )}
 
-      <Section k="fixed" label={tr("Fixed Expenses",settings.aiLanguage)} icon="📅"/>
+      <Section k="fixed" label={tr("Fixed Expenses",settings.uiLanguage)} icon="📅"/>
       {sec==="fixed"&&(
         <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:8}}>
           {fixedExpenses.map(fe=>(
@@ -1689,7 +1709,31 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
         </div>
       )}
 
-      <Section k="ai" label={tr("AI Coach Settings",settings.aiLanguage)} icon="🤖"/>
+      <Section k="appLang" label={tr("App Language",settings.uiLanguage)} icon="🌐"/>
+      {sec==="appLang"&&(
+        <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:8}}>
+          <div style={{fontSize:11,color:t.textMuted,marginBottom:8,lineHeight:1.5}}>
+            Controls the language of buttons, labels, and menus throughout the app. Independent from your AI companion's language.
+          </div>
+          <select
+            value={settings.uiLanguage||"English"}
+            onChange={e=>onSettingsChange({...settings,uiLanguage:e.target.value})}
+            style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"10px 12px",fontSize:14,cursor:"pointer"}}
+          >
+            <option value="English">🇺🇸 English</option>
+            <option value="Russian">🇷🇺 Русский</option>
+            <option value="Kazakh">🇰🇿 Қазақша</option>
+          </select>
+          <button
+            onClick={()=>onSettingsChange({...settings,uiLanguage:detectSystemLanguage()})}
+            style={{marginTop:8,width:"100%",background:"transparent",color:t.textMuted,border:`1px dashed ${t.border}`,borderRadius:8,padding:"8px",fontSize:12,cursor:"pointer",fontFamily:"system-ui,sans-serif"}}
+          >
+            🔄 {tr("Auto (System)",settings.uiLanguage)}
+          </button>
+        </div>
+      )}
+
+      <Section k="ai" label={tr("AI Coach Settings",settings.uiLanguage)} icon="🤖"/>
       {sec==="ai"&&(
         <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:8,display:"flex",flexDirection:"column",gap:10}}>
           <div>
@@ -1709,7 +1753,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
           </div>
           {[
             {l:"Tone",k:"aiTone",opts:[{v:"soft",l:"😇 Soft — Gentle & encouraging"},{v:"medium",l:"😏 Medium — Direct & witty"},{v:"harsh",l:"😈 Harsh — Brutally honest"},{v:"explicit",l:"🔞 18+ — Unfiltered & profane"}]},
-            {l:"Language",k:"aiLanguage",opts:[{v:"English",l:"English"},{v:"Russian",l:"Russian"},{v:"Kazakh",l:"Kazakh"}]},
+            {l:tr("AI Language",settings.uiLanguage),k:"aiLanguage",opts:[{v:"English",l:"English"},{v:"Russian",l:"Русский"},{v:"Kazakh",l:"Қазақша"}]},
           ].map(({l,k,opts})=>(
             <div key={k}>
               <div style={{fontSize:12,color:t.textMuted,marginBottom:5}}>{l}</div>
@@ -1726,7 +1770,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
         </div>
       )}
 
-      <Section k="currencies" label={tr("Exchange Rates",settings.aiLanguage)} icon="💱"/>
+      <Section k="currencies" label={tr("Exchange Rates",settings.uiLanguage)} icon="💱"/>
       {sec==="currencies"&&(
         <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:8}}>
           <div style={{fontSize:11,color:t.textMuted,marginBottom:10,lineHeight:1.5}}>
@@ -2141,7 +2185,10 @@ function App(){
       try{
         setAccountsRaw(accs||DEF_ACCOUNTS);
         setCategoriesRaw(cats||DEF_CATS);
-        setSettingsRaw({...DEF_SETTINGS,...(sets||{})});
+        // Resolve uiLanguage: if null/missing (first launch), auto-detect from system
+        const merged={...DEF_SETTINGS,...(sets||{})};
+        if(!merged.uiLanguage)merged.uiLanguage=detectSystemLanguage();
+        setSettingsRaw(merged);
         setFixedRaw(fxd||DEF_FIXED);
         setTransactionsRaw(txns||[]);
       }catch(e){console.error("State set error:",e);}
@@ -2372,7 +2419,7 @@ function App(){
     return <OnboardingScreen tgUser={tgUser} onComplete={handleOnboardingComplete}/>;
   }
 
-  const lang=settings.aiLanguage||"English";
+  const lang=settings.uiLanguage||"English";
   const TABS=[
     {k:"home",icon:"🏠",label:tr("Home",lang)},
     {k:"analytics",icon:"📊",label:tr("Analytics",lang)},
