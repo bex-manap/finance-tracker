@@ -156,23 +156,78 @@ const fmtTime=(d)=>{const dt=new Date(d);return`${String(dt.getHours()).padStart
 const haptic=(t="medium")=>{try{tg?.HapticFeedback?.impactOccurred(t);}catch{}};
 
 // ── QUOTES ──
-const QUOTES=[
-  {q:"Do not save what is left after spending, but spend what is left after saving.",a:"Warren Buffett"},
-  {q:"An investment in knowledge pays the best interest.",a:"Benjamin Franklin"},
-  {q:"It's not how much money you make, but how much you keep.",a:"Robert Kiyosaki"},
-  {q:"Money is a terrible master but an excellent servant.",a:"P.T. Barnum"},
-  {q:"Time is more valuable than money. You can get more money, but not more time.",a:"Jim Rohn"},
-  {q:"Beware of little expenses — a small leak will sink a great ship.",a:"Benjamin Franklin"},
-  {q:"Too many people spend money they haven't earned to impress people they don't like.",a:"Will Rogers"},
-  {q:"The goal isn't more money. The goal is living life on your terms.",a:"Chris Brogan"},
-  {q:"Financial freedom is available to those who learn about it and work for it.",a:"Robert Kiyosaki"},
-  {q:"Every time you borrow money, you're robbing your future self.",a:"Nathan W. Morris"},
-  {q:"Wealth consists not in having great possessions, but in having few wants.",a:"Epictetus"},
-  {q:"Rich people have small TVs and big libraries.",a:"Zig Ziglar"},
-  {q:"The stock market is a device for transferring money from the impatient to the patient.",a:"Warren Buffett"},
-  {q:"Money grows on the tree of persistence.",a:"Japanese Proverb"},
-  {q:"It's not your salary that makes you rich, it's your spending habits.",a:"Charles Jaffe"},
-];
+// Financial wisdom quotes — translated for each supported UI language.
+// The author name stays in its native form (transliterated where appropriate for Russian/Kazakh).
+// Indexed identically across languages so picking by index gives the same quote in any language.
+const QUOTES_BY_LANG={
+  English:[
+    {q:"Do not save what is left after spending, but spend what is left after saving.",a:"Warren Buffett"},
+    {q:"An investment in knowledge pays the best interest.",a:"Benjamin Franklin"},
+    {q:"It's not how much money you make, but how much you keep.",a:"Robert Kiyosaki"},
+    {q:"Money is a terrible master but an excellent servant.",a:"P.T. Barnum"},
+    {q:"Time is more valuable than money. You can get more money, but not more time.",a:"Jim Rohn"},
+    {q:"Beware of little expenses — a small leak will sink a great ship.",a:"Benjamin Franklin"},
+    {q:"Too many people spend money they haven't earned to impress people they don't like.",a:"Will Rogers"},
+    {q:"The goal isn't more money. The goal is living life on your terms.",a:"Chris Brogan"},
+    {q:"Financial freedom is available to those who learn about it and work for it.",a:"Robert Kiyosaki"},
+    {q:"Every time you borrow money, you're robbing your future self.",a:"Nathan W. Morris"},
+    {q:"Wealth consists not in having great possessions, but in having few wants.",a:"Epictetus"},
+    {q:"Rich people have small TVs and big libraries.",a:"Zig Ziglar"},
+    {q:"The stock market is a device for transferring money from the impatient to the patient.",a:"Warren Buffett"},
+    {q:"Money grows on the tree of persistence.",a:"Japanese Proverb"},
+    {q:"It's not your salary that makes you rich, it's your spending habits.",a:"Charles Jaffe"},
+  ],
+  Russian:[
+    {q:"Не откладывайте то, что осталось после трат, а тратьте то, что осталось после сбережений.",a:"Уоррен Баффет"},
+    {q:"Инвестиции в знания приносят самые высокие проценты.",a:"Бенджамин Франклин"},
+    {q:"Важно не то, сколько ты зарабатываешь, а то, сколько ты сохраняешь.",a:"Роберт Кийосаки"},
+    {q:"Деньги — ужасный хозяин, но превосходный слуга.",a:"Финеас Барнум"},
+    {q:"Время дороже денег. Денег можно заработать ещё, а времени — нет.",a:"Джим Рон"},
+    {q:"Опасайтесь мелких расходов — маленькая течь топит большой корабль.",a:"Бенджамин Франклин"},
+    {q:"Слишком многие тратят деньги, которых не заработали, на вещи, которые им не нужны, чтобы впечатлить людей, которые им не нравятся.",a:"Уилл Роджерс"},
+    {q:"Цель — не больше денег. Цель — жить жизнью на своих условиях.",a:"Крис Броган"},
+    {q:"Финансовая свобода доступна тем, кто учится ей и работает над ней.",a:"Роберт Кийосаки"},
+    {q:"Каждый раз, когда вы берёте в долг, вы обкрадываете себя будущего.",a:"Натан Моррис"},
+    {q:"Богатство состоит не в обладании многим, а в малых потребностях.",a:"Эпиктет"},
+    {q:"У богатых маленькие телевизоры и большие библиотеки.",a:"Зиг Зиглар"},
+    {q:"Фондовый рынок — устройство для передачи денег от нетерпеливых к терпеливым.",a:"Уоррен Баффет"},
+    {q:"Деньги растут на дереве настойчивости.",a:"Японская пословица"},
+    {q:"Богатым тебя делает не зарплата, а привычки расходования.",a:"Чарльз Джаффе"},
+  ],
+  Kazakh:[
+{q:"Шығыннан артылғанды жинама, жинағаннан артылғанды жұмса.",a:"Уоррен Баффет"},
+
+{q:"Білімге салынған инвестиция ең жоғары табыс әкеледі.",a:"Бенджамин Франклин"},
+
+{q:"Қанша табатының емес, қаншасын сақтап қалатының маңызды.",a:"Роберт Кийосаки"},
+
+{q:"Ақша — жаман қожайын, бірақ керемет қызметші.",a:"Финеас Барнум"},
+
+{q:"Уақыт ақшадан қымбат. Ақшаны қайта табуға болады, уақытты — жоқ.",a:"Джим Рон"},
+
+{q:"Кішкентай шығыннан сақтан — кішкентай тесік үлкен кемені батырады.",a:"Бенджамин Франклин"},
+
+{q:"Көп адам ұнатпайтын адамдарды таңғалдыру үшін өзінде жоқ ақшаны жұмсайды.",a:"Уилл Роджерс"},
+
+{q:"Мақсат — көп ақша табу емес. Мақсат — өз ережеңмен өмір сүру.",a:"Крис Броган"},
+
+{q:"Қаржылық еркіндік оған үйреніп, сол үшін еңбек еткендерге ғана келеді.",a:"Роберт Кийосаки"},
+
+{q:"Қарыз алған сайын болашақтағы өзіңді тонап жатырсың.",a:"Натан Моррис"},
+
+{q:"Байлық — көп нәрсеге ие болу емес, аз нәрсені қалау.",a:"Эпиктет"},
+
+{q:"Бай адамдардың теледидары кішкентай, ал кітапханасы үлкен.",a:"Зиг Зиглар"},
+
+{q:"Қор биржасы — ақшаны шыдамсыздан шыдамдыға ауыстыратын құрал.",a:"Уоррен Баффет"},
+
+{q:"Ақша табандылық ағашында өседі.",a:"Жапон мақалы"},
+
+{q:"Сені бай ететін айлығың емес, қаржы әдеттерің.",a:"Чарльз Джаффе"},
+  ]
+};
+// Helper to get the quote list for a given language with English fallback
+const getQuotes=(lang)=>QUOTES_BY_LANG[lang]||QUOTES_BY_LANG.English;
 
 // ── DEFAULTS ──
 const DEF_CATS=[
@@ -215,6 +270,29 @@ const CRYPTO_PRESETS=[
 ];
 const DEF_ACCOUNTS=[];
 const DEF_FIXED=[];
+// Goals are user-defined savings targets. Each has a name, target amount in KZT
+// (we always store in KZT internally; display converts to selectedCurrency), an
+// optional emoji and deadline. Progress = total income minus total expenses since
+// the goal was created (i.e. net savings during the goal period).
+const DEF_GOALS=[];
+
+// Reference prices for "equivalent comparisons" — what does X KZT actually buy?
+// Used by the Goals UI to translate amounts into tangible items.
+// Sourced from typical Astana/Almaty prices in 2026.
+const COMPARISON_ITEMS=[
+  {emoji:"☕",name:"coffee orders",kzt:2000,plural:"coffee orders"},
+  {emoji:"🍕",name:"pizzas",kzt:5500,plural:"pizzas"},
+  {emoji:"🍔",name:"burgers",kzt:3500,plural:"burgers"},
+  {emoji:"🍣",name:"sushi sets",kzt:8000,plural:"sushi sets"},
+  {emoji:"🍿",name:"movie tickets",kzt:3000,plural:"movie tickets"},
+  {emoji:"🛒",name:"weekly groceries",kzt:30000,plural:"weeks of groceries"},
+  {emoji:"🚕",name:"taxi rides",kzt:2000,plural:"taxi rides"},
+  {emoji:"⛽",name:"gas tanks",kzt:20000,plural:"gas tanks"},
+  {emoji:"📱",name:"iPhones",kzt:800000,plural:"iPhones"},
+  {emoji:"✈️",name:"domestic flights",kzt:45000,plural:"domestic flights"},
+  {emoji:"🏋️",name:"month gym",kzt:25000,plural:"months at the gym"},
+  {emoji:"🏠",name:"month rent",kzt:280000,plural:"months of rent"}
+];
 const DEF_SETTINGS={
   darkMode:true,
   displayName:"",
@@ -449,7 +527,8 @@ Keep it to 1-2 sentences MAX. ${langGuidance} No preamble, no emoji overload (pe
     // Model selection: Kazakh is underrepresented in LLM training data and benefits
     // significantly from Sonnet's stronger multilingual abilities. English/Russian
     // work well on Haiku 4.5 (~5x cheaper), so we only use Sonnet when needed.
-    const model=lang==="Kazakh"?"claude-sonnet-4-20250514":"claude-haiku-4-5-20251001";
+    // Note: model IDs change as Anthropic releases new versions — currently on Sonnet 4.6.
+    const model=lang==="Kazakh"?"claude-sonnet-4-6":"claude-haiku-4-5-20251001";
     const res=await fetch("https://finance-tracker-proxy.life-bekzat.workers.dev",{
       method:"POST",
       headers:{"Content-Type":"application/json"},
@@ -541,6 +620,14 @@ const TRANSLATIONS={
     "Your AI Companion":"Ваш ИИ-питомец","Refresh rates now":"Обновить курсы",
     "App Language":"Язык приложения","AI Language":"Язык ИИ",
     "Auto (System)":"Авто (система)",
+    // Goals
+    "Savings Goals":"Цели накопления","Remaining":"Осталось","equivalent of":"равно",
+    "days left":"дн. осталось","Due today":"Срок сегодня","days overdue":"дн. просрочено",
+    "Goal achieved!":"Цель достигнута!",
+    "coffee orders":"чашек кофе","pizzas":"пицц","burgers":"бургеров","sushi sets":"сетов суши",
+    "movie tickets":"билетов в кино","weeks of groceries":"недель продуктов",
+    "taxi rides":"поездок на такси","gas tanks":"полных баков","iPhones":"iPhone-ов",
+    "domestic flights":"внутр. перелётов","months at the gym":"мес. в зале","months of rent":"мес. аренды",
     // Misc
     "Save":"Сохранить","Cancel":"Отмена","Delete":"Удалить","Edit":"Изменить",
     "Skip":"Пропустить","Continue":"Далее","Back":"Назад",
@@ -581,6 +668,13 @@ const TRANSLATIONS={
     "Your AI Companion":"ЖИ серігіңіз","Refresh rates now":"Бағамдарды жаңарту",
     "App Language":"Қолданба тілі","AI Language":"ЖИ тілі",
     "Auto (System)":"Авто (жүйе)",
+    "Savings Goals":"Жинақтау мақсаттары","Remaining":"Қалды","equivalent of":"тең",
+    "days left":"күн қалды","Due today":"Бүгін мерзімі","days overdue":"күн кешіктірілді",
+    "Goal achieved!":"Мақсат орындалды!",
+    "coffee orders":"кофе","pizzas":"пицца","burgers":"бургер","sushi sets":"суши",
+    "movie tickets":"кино билеті","weeks of groceries":"апта азық-түлік",
+    "taxi rides":"такси","gas tanks":"толық бак","iPhones":"iPhone",
+    "domestic flights":"ішкі рейс","months at the gym":"ай спортзал","months of rent":"ай жалдау",
     "Save":"Сақтау","Cancel":"Болдырмау","Delete":"Жою","Edit":"Өзгерту",
     "Skip":"Өткізу","Continue":"Жалғастыру","Back":"Артқа",
     "Bank":"Банк","Crypto":"Крипто",
@@ -1013,10 +1107,109 @@ function TxnDetail({txn,open,onClose,accounts,categories,onDelete,settings,t}){
 }
 
 // ── HOME SCREEN ──
-function HomeScreen({accounts,transactions,categories,fixedExpenses,settings,onSettingsChange,onAddTxn,t,onTxnClick}){
+// ── GOALS CARD (HOME SCREEN) ──
+// Compact horizontal scroll showing each goal's progress with bar + comparison.
+// Tap a goal to expand and see what the remaining amount could buy.
+function GoalsCard({goals,transactions,settings,t}){
+  const[expandedId,setExpandedId]=useState(null);
+  if(!goals||goals.length===0)return null;
+  const{selectedCurrency,exchangeRates,uiLanguage}=settings;
+  const lang=uiLanguage||"English";
+
+  // For each goal: compute saved amount = sum(income) - sum(expense) since the goal's createdAt date.
+  // This means "savings achieved while pursuing this goal" rather than total balance.
+  const computeSaved=(goal)=>{
+    const since=new Date(goal.createdAt).getTime();
+    let net=0;
+    transactions.forEach(tx=>{
+      if(new Date(tx.date).getTime()<since)return;
+      if(tx.type==="income")net+=toKZT(tx.amount,tx.currency,exchangeRates);
+      else if(tx.type==="expense")net-=toKZT(tx.amount,tx.currency,exchangeRates);
+    });
+    return Math.max(0,net);
+  };
+
+  return(
+    <div style={{marginBottom:18}}>
+      <div style={{fontSize:16,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif",marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
+        🎯 {tr("Savings Goals",lang)}
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        {goals.map(goal=>{
+          const savedKzt=computeSaved(goal);
+          const targetKzt=goal.targetKzt;
+          const remainingKzt=Math.max(0,targetKzt-savedKzt);
+          const pct=targetKzt>0?Math.min(100,(savedKzt/targetKzt)*100):0;
+          const isComplete=savedKzt>=targetKzt;
+          const isExpanded=expandedId===goal.id;
+
+          // Days info (if deadline set)
+          let deadlineText=null;
+          if(goal.deadline){
+            const daysLeft=Math.ceil((new Date(goal.deadline).getTime()-Date.now())/(1000*60*60*24));
+            if(daysLeft>0)deadlineText=`${daysLeft} ${tr("days left",lang)}`;
+            else if(daysLeft===0)deadlineText=tr("Due today",lang);
+            else deadlineText=`${Math.abs(daysLeft)} ${tr("days overdue",lang)}`;
+          }
+
+          return(
+            <div key={goal.id} onClick={()=>setExpandedId(isExpanded?null:goal.id)} style={{background:t.bgCard,borderRadius:14,padding:"14px",border:`1px solid ${isComplete?"#10b98166":t.border}`,cursor:"pointer"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                <div style={{fontSize:24}}>{goal.emoji||"🎯"}</div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:14,fontWeight:600,color:t.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{goal.name}</div>
+                  <div style={{fontSize:11,color:t.textMuted}}>
+                    {fmtAmt(fromKZT(savedKzt,selectedCurrency,exchangeRates),selectedCurrency)} / {fmtAmt(fromKZT(targetKzt,selectedCurrency,exchangeRates),selectedCurrency)}
+                    {deadlineText&&<span style={{marginLeft:8}}>· {deadlineText}</span>}
+                  </div>
+                </div>
+                <div style={{fontSize:14,fontWeight:700,color:isComplete?"#10b981":t.text,fontFamily:"monospace"}}>{Math.round(pct)}%</div>
+              </div>
+              {/* Progress bar */}
+              <div style={{height:8,background:t.bgInput,borderRadius:4,overflow:"hidden"}}>
+                <div style={{height:"100%",width:`${pct}%`,background:isComplete?"linear-gradient(90deg,#10b981,#34d399)":"linear-gradient(90deg,#3b82f6,#10b981)",borderRadius:4,transition:"width .4s ease"}}/>
+              </div>
+              {/* Expanded view: comparison breakdown */}
+              {isExpanded&&!isComplete&&(
+                <div className="fade-in" style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${t.border}`}}>
+                  <div style={{fontSize:11,color:t.textMuted,marginBottom:8,fontStyle:"italic"}}>
+                    {tr("Remaining",lang)}: {fmtAmt(fromKZT(remainingKzt,selectedCurrency,exchangeRates),selectedCurrency)} = {tr("equivalent of",lang)}
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                    {COMPARISON_ITEMS
+                      .map(item=>({...item,count:Math.floor(remainingKzt/item.kzt)}))
+                      .filter(item=>item.count>=1&&item.count<=10000)
+                      .slice(0,6)
+                      .map((item,i)=>(
+                        <div key={i} style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:t.text,padding:"4px 0"}}>
+                          <span style={{fontSize:16}}>{item.emoji}</span>
+                          <span style={{fontFamily:"monospace",fontWeight:600}}>{item.count.toLocaleString()}</span>
+                          <span style={{color:t.textMuted,fontSize:11}}>{tr(item.plural,lang)}</span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+              {isExpanded&&isComplete&&(
+                <div className="fade-in" style={{marginTop:12,paddingTop:12,borderTop:`1px solid #10b98144`,fontSize:13,color:"#10b981",textAlign:"center",fontWeight:600}}>
+                  🎉 {tr("Goal achieved!",lang)}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function HomeScreen({accounts,transactions,categories,fixedExpenses,goals,settings,onSettingsChange,onAddTxn,t,onTxnClick}){
   const{selectedCurrency,balanceHidden,exchangeRates}=settings;
-  const quoteIdx=useMemo(()=>Math.floor(Date.now()/86400000)%QUOTES.length,[]);
-  const quote=QUOTES[quoteIdx];
+  // Pick today's quote from the user's UI language. Use the same daily index across
+  // all languages so the same wisdom appears in different languages on the same day.
+  const quoteList=useMemo(()=>getQuotes(settings.uiLanguage),[settings.uiLanguage]);
+  const quoteIdx=useMemo(()=>Math.floor(Date.now()/86400000)%quoteList.length,[quoteList.length]);
+  const quote=quoteList[quoteIdx];
   const currencies=settings.activeCurrencies||["KZT","USD","EUR","USDT"];
   const cycleCur=()=>{const i=currencies.indexOf(selectedCurrency);onSettingsChange({...settings,selectedCurrency:currencies[(i+1)%currencies.length]});};
   const totalKZT=accounts.reduce((s,a)=>s+toKZT(a.balance,a.currency,exchangeRates),0);
@@ -1127,6 +1320,9 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,settings,onS
             </div>
           </div>
         )}
+
+        {/* Goals — savings progress with comparisons */}
+        <GoalsCard goals={goals} transactions={transactions} settings={settings} t={t}/>
 
         {/* Recent Transactions */}
         <div style={{marginBottom:8}}>
@@ -1474,7 +1670,7 @@ function HistoryScreen({transactions,accounts,categories,settings,onTxnClick,t})
 }
 
 // ── SETTINGS SCREEN ──
-function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsChange,onAccountsChange,onCategoriesChange,onFixedChange,onReset,onRefreshRates,onExport,t}){
+function SettingsScreen({accounts,categories,fixedExpenses,goals,settings,onSettingsChange,onAccountsChange,onCategoriesChange,onFixedChange,onGoalsChange,onReset,onRefreshRates,onExport,t}){
   const[sec,setSec]=useState(null);
   const[editAccId,setEditAccId]=useState(null);
   const[editAccName,setEditAccName]=useState("");
@@ -1491,6 +1687,10 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
   // Per-category buffer for new subcategory name (keyed by category id)
   const[newSubName,setNewSubName]=useState("");
   const[newFeName,setNewFeName]=useState("");
+  const[newGoalName,setNewGoalName]=useState("");
+  const[newGoalEmoji,setNewGoalEmoji]=useState("🎯");
+  const[newGoalAmount,setNewGoalAmount]=useState("");
+  const[newGoalDeadline,setNewGoalDeadline]=useState("");
   const[newFeAmt,setNewFeAmt]=useState("");
   const[newFeDay,setNewFeDay]=useState("1");
   const fileRef=useRef();
@@ -1704,6 +1904,61 @@ function SettingsScreen({accounts,categories,fixedExpenses,settings,onSettingsCh
               <input value={newFeAmt} onChange={e=>setNewFeAmt(e.target.value)} placeholder="Amount ₸" type="number" style={{flex:1,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"9px 12px",fontSize:14}}/>
               <input value={newFeDay} onChange={e=>setNewFeDay(e.target.value)} placeholder="Day" type="number" min="1" max="31" style={{width:64,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"9px 10px",fontSize:14,textAlign:"center"}}/>
               <button onClick={()=>{if(!newFeName.trim()||!newFeAmt)return;onFixedChange([...fixedExpenses,{id:uid(),name:newFeName.trim(),amount:+newFeAmt,currency:"KZT",dayOfMonth:+newFeDay||1,categoryId:"cat3",accountId:accounts[0]?.id}]);setNewFeName("");setNewFeAmt("");}} style={{background:"#10b981",border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",cursor:"pointer",fontSize:16,fontWeight:700}}>+</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <Section k="goals" label={tr("Savings Goals",settings.uiLanguage)} icon="🎯"/>
+      {sec==="goals"&&(
+        <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:8}}>
+          {(goals||[]).length===0&&(
+            <div style={{fontSize:12,color:t.textMuted,fontStyle:"italic",padding:"8px 4px",lineHeight:1.5}}>
+              No goals yet. Add one below — your progress will appear on the Home screen.
+            </div>
+          )}
+          {(goals||[]).map(g=>{
+            const targetDisplay=fromKZT(g.targetKzt,settings.selectedCurrency,settings.exchangeRates);
+            return(
+              <div key={g.id} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 0",borderBottom:`1px solid ${t.border}`}}>
+                <span style={{fontSize:20}}>{g.emoji||"🎯"}</span>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:14,color:t.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{g.name}</div>
+                  <div style={{fontSize:11,color:t.textMuted,fontFamily:"monospace"}}>
+                    {fmtAmt(targetDisplay,settings.selectedCurrency)}
+                    {g.deadline&&<span> · {new Date(g.deadline).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</span>}
+                  </div>
+                </div>
+                <button onClick={()=>{if(confirm(`Delete goal "${g.name}"?`))onGoalsChange(goals.filter(x=>x.id!==g.id));}} style={{background:"#ef444422",border:"none",borderRadius:6,padding:"5px 10px",color:"#ef4444",cursor:"pointer",fontSize:12,flexShrink:0}}>✕</button>
+              </div>
+            );
+          })}
+          <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${t.border}`}}>
+            <div style={{fontSize:11,fontWeight:700,color:t.textMuted,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:8}}>Add new goal</div>
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
+                <EmojiPicker value={newGoalEmoji} onChange={setNewGoalEmoji} t={t} categoryHint="finance"/>
+                <input value={newGoalName} onChange={e=>setNewGoalName(e.target.value)} placeholder="Goal name (e.g. Vacation, New laptop)" style={{flex:1,minWidth:0,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"9px 10px",fontSize:14,fontFamily:"system-ui,sans-serif"}}/>
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <input value={newGoalAmount} onChange={e=>setNewGoalAmount(e.target.value)} placeholder="Target amount (KZT)" type="number" style={{flex:2,minWidth:0,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"9px 10px",fontSize:14,fontFamily:"monospace"}}/>
+                <input value={newGoalDeadline} onChange={e=>setNewGoalDeadline(e.target.value)} type="date" placeholder="Deadline (optional)" style={{flex:1,minWidth:0,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"9px 8px",fontSize:13,boxSizing:"border-box"}}/>
+              </div>
+              <button onClick={()=>{
+                if(!newGoalName.trim()||!newGoalAmount||+newGoalAmount<=0)return;
+                onGoalsChange([...(goals||[]),{
+                  id:uid(),
+                  name:newGoalName.trim(),
+                  emoji:newGoalEmoji||"🎯",
+                  targetKzt:+newGoalAmount, // assumed entered in KZT
+                  deadline:newGoalDeadline||null,
+                  createdAt:new Date().toISOString()
+                }]);
+                setNewGoalName("");setNewGoalEmoji("🎯");setNewGoalAmount("");setNewGoalDeadline("");
+              }} style={{background:"#10b981",border:"none",borderRadius:8,padding:"10px",color:"#fff",cursor:"pointer",fontSize:14,fontWeight:600,fontFamily:"system-ui,sans-serif"}}>+ Add Goal</button>
+            </div>
+            <div style={{fontSize:11,color:t.textMuted,marginTop:8,fontStyle:"italic",lineHeight:1.5}}>
+              💡 Progress = total income minus total expenses since the goal was created. Amounts are entered and stored in tenge.
             </div>
           </div>
         </div>
@@ -2098,6 +2353,7 @@ function App(){
   const[transactions,setTransactionsRaw]=useState([]);
   const[categories,setCategoriesRaw]=useState(DEF_CATS);
   const[fixedExpenses,setFixedRaw]=useState(DEF_FIXED);
+  const[goals,setGoalsRaw]=useState(DEF_GOALS);
   const[settings,setSettingsRaw]=useState(DEF_SETTINGS);
   const[tab,setTab]=useState("home");
   const[addModal,setAddModal]=useState(false);
@@ -2109,18 +2365,20 @@ function App(){
   const setTransactions=v=>{setTransactionsRaw(v);LS.set("ft_transactions",v);}; // full array only to localStorage; CS updates happen per-txn
   const setCategories=v=>{setCategoriesRaw(v);save("ft_categories",v);};
   const setFixed=v=>{setFixedRaw(v);save("ft_fixed",v);};
+  const setGoals=v=>{setGoalsRaw(v);save("ft_goals",v);};
   const setSettings=v=>{setSettingsRaw(v);save("ft_settings",v);};
 
   useEffect(()=>{
     let cancelled=false;
     (async()=>{
-      let accs=null,cats=null,sets=null,fxd=null,txns=[];
+      let accs=null,cats=null,sets=null,fxd=null,gls=null,txns=[];
       try{
         // Try to load from CloudStorage first; falls back to localStorage if CS unavailable or times out.
         accs=await STORE.get("ft_accounts",null);
         cats=await STORE.get("ft_categories",null);
         sets=await STORE.get("ft_settings",null);
         fxd=await STORE.get("ft_fixed",null);
+        gls=await STORE.get("ft_goals",null);
         txns=await STORE.getAllTransactions();
       }catch(e){
         console.error("Load error, falling back to localStorage:",e);
@@ -2135,12 +2393,14 @@ function App(){
           cats=DEF_CATS;
           sets=DEF_SETTINGS;
           fxd=DEF_FIXED;
+          gls=DEF_GOALS;
           txns=[];
           // Persist seed data (fire and forget — don't block UI)
           STORE.set("ft_accounts",accs).catch(()=>{});
           STORE.set("ft_categories",cats).catch(()=>{});
           STORE.set("ft_settings",sets).catch(()=>{});
           STORE.set("ft_fixed",fxd).catch(()=>{});
+          STORE.set("ft_goals",gls).catch(()=>{});
           LS.set("ft_init",true);
         } else {
           // Returning user — backfill any missing pieces with defaults
@@ -2148,6 +2408,7 @@ function App(){
           cats=cats||LS.get("ft_categories",DEF_CATS);
           sets=sets||LS.get("ft_settings",DEF_SETTINGS);
           fxd=fxd||LS.get("ft_fixed",DEF_FIXED);
+          gls=gls||LS.get("ft_goals",DEF_GOALS);
           if(!txns||txns.length===0)txns=LS.get("ft_transactions",[]);
           // Merge with default settings so new fields (like aiPet) always have a value
           sets={...DEF_SETTINGS,...sets};
@@ -2190,6 +2451,7 @@ function App(){
         if(!merged.uiLanguage)merged.uiLanguage=detectSystemLanguage();
         setSettingsRaw(merged);
         setFixedRaw(fxd||DEF_FIXED);
+        setGoalsRaw(gls||DEF_GOALS);
         setTransactionsRaw(txns||[]);
       }catch(e){console.error("State set error:",e);}
 
@@ -2285,7 +2547,7 @@ function App(){
   const handleReset=useCallback(async()=>{
     try{
       // Clear localStorage keys used by this app
-      ["ft_accounts","ft_categories","ft_settings","ft_fixed","ft_transactions","ft_init","ft_cs_migrated"]
+      ["ft_accounts","ft_categories","ft_settings","ft_fixed","ft_goals","ft_transactions","ft_init","ft_cs_migrated"]
         .forEach(k=>LS.remove(k));
       // Clear CloudStorage — remove all ft_* keys
       if(CS_AVAILABLE){
@@ -2431,10 +2693,10 @@ function App(){
   return(
     <div style={{height:"100vh",display:"flex",flexDirection:"column",background:t.bg,maxWidth:430,margin:"0 auto",position:"relative",overflow:"hidden"}}>
       <div style={{flex:1,overflow:"hidden",position:"relative"}} className="fade-in">
-        {tab==="home"&&<HomeScreen accounts={accounts} transactions={transactions} categories={categories} fixedExpenses={fixedExpenses} settings={settings} onSettingsChange={setSettings} onAddTxn={(mode)=>{setAddMode(mode);setAddModal(true);}} t={t} onTxnClick={setSelTxn}/>}
+        {tab==="home"&&<HomeScreen accounts={accounts} transactions={transactions} categories={categories} fixedExpenses={fixedExpenses} goals={goals} settings={settings} onSettingsChange={setSettings} onAddTxn={(mode)=>{setAddMode(mode);setAddModal(true);}} t={t} onTxnClick={setSelTxn}/>}
         {tab==="analytics"&&<AnalyticsScreen transactions={transactions} categories={categories} settings={settings} t={t}/>}
         {tab==="history"&&<HistoryScreen transactions={transactions} accounts={accounts} categories={categories} settings={settings} onTxnClick={setSelTxn} t={t}/>}
-        {tab==="settings"&&<SettingsScreen accounts={accounts} categories={categories} fixedExpenses={fixedExpenses} settings={settings} onSettingsChange={setSettings} onAccountsChange={setAccounts} onCategoriesChange={setCategories} onFixedChange={setFixed} onReset={handleReset} onRefreshRates={handleRefreshRates} onExport={handleExportCSV} t={t}/>}
+        {tab==="settings"&&<SettingsScreen accounts={accounts} categories={categories} fixedExpenses={fixedExpenses} goals={goals} settings={settings} onSettingsChange={setSettings} onAccountsChange={setAccounts} onCategoriesChange={setCategories} onFixedChange={setFixed} onGoalsChange={setGoals} onReset={handleReset} onRefreshRates={handleRefreshRates} onExport={handleExportCSV} t={t}/>}
       </div>
       <div style={{flexShrink:0,display:"flex",alignItems:"center",background:t.tabBg,borderTop:`1px solid ${t.tabBorder}`,padding:"6px 0 calc(10px + env(safe-area-inset-bottom, 0px))",zIndex:50}}>
         {TABS.map(({k,icon,label})=>{
