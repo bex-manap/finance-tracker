@@ -155,6 +155,63 @@ const sameDay=(d,y,m,day)=>{const dt=new Date(d);return dt.getFullYear()===y&&dt
 const fmtTime=(d)=>{const dt=new Date(d);return`${String(dt.getHours()).padStart(2,"0")}:${String(dt.getMinutes()).padStart(2,"0")}`;};
 const haptic=(t="medium")=>{try{tg?.HapticFeedback?.impactOccurred(t);}catch{}};
 
+// ── ANALYTICS TRACKING ──
+// Sends anonymous events to the Cloudflare Worker for the admin dashboard.
+// Only sends behavioral events (app opens, transactions created — count only, no amounts).
+// Each browser tab gets a unique session_id so we can compute session lengths.
+const TRACK_URL="https://finance-tracker-proxy.life-bekzat.workers.dev/track";
+const SESSION_ID=Math.random().toString(36).slice(2,12)+"-"+Date.now().toString(36);
+
+const track=(event_type,metadata={})=>{
+  // Only track if we have a Telegram user (skip standalone web visitors)
+  const u=tg?.initDataUnsafe?.user;
+  if(!u?.id)return;
+
+  // Read latest settings from localStorage (synchronous, fast — runs once per event)
+  let s={};
+  try{s=JSON.parse(localStorage.getItem("ft_settings")||"{}");}catch{}
+
+  const platform=tg?.platform||"unknown"; // "ios" | "android" | "tdesktop" | "weba" | "webk" | etc.
+
+  const payload={
+    tg_id:u.id,
+    username:u.username||null,
+    first_name:u.first_name||null,
+    language_code:u.language_code||null,
+    ui_language:s.uiLanguage||null,
+    ai_language:s.aiLanguage||null,
+    ai_pet:s.aiPet||null,
+    ai_tone:s.aiTone||null,
+    platform,
+    session_id:SESSION_ID,
+    event_type,
+    metadata
+  };
+  // Fire-and-forget — never block the UI on telemetry
+  try{
+    fetch(TRACK_URL,{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(payload),
+      keepalive:true // lets the request survive page unload
+    }).catch(()=>{});
+  }catch{}
+};
+
+// Catch unhandled JS errors and report them to the dashboard
+window.addEventListener("error",(e)=>{
+  track("js_error",{
+    message:e.message?.slice(0,300)||"unknown",
+    stack:e.error?.stack?.slice(0,1500)||""
+  });
+});
+window.addEventListener("unhandledrejection",(e)=>{
+  track("js_error",{
+    message:String(e.reason?.message||e.reason||"unhandled rejection").slice(0,300),
+    stack:e.reason?.stack?.slice(0,1500)||""
+  });
+});
+
 // ── QUOTES ──
 // Financial wisdom quotes — translated for each supported UI language.
 // The author name stays in its native form (transliterated where appropriate for Russian/Kazakh).
@@ -195,35 +252,21 @@ const QUOTES_BY_LANG={
     {q:"Богатым тебя делает не зарплата, а привычки расходования.",a:"Чарльз Джаффе"},
   ],
   Kazakh:[
-{q:"Шығыннан артылғанды жинама, жинағаннан артылғанды жұмса.",a:"Уоррен Баффет"},
-
-{q:"Білімге салынған инвестиция ең жоғары табыс әкеледі.",a:"Бенджамин Франклин"},
-
-{q:"Қанша табатының емес, қаншасын сақтап қалатының маңызды.",a:"Роберт Кийосаки"},
-
-{q:"Ақша — жаман қожайын, бірақ керемет қызметші.",a:"Финеас Барнум"},
-
-{q:"Уақыт ақшадан қымбат. Ақшаны қайта табуға болады, уақытты — жоқ.",a:"Джим Рон"},
-
-{q:"Кішкентай шығыннан сақтан — кішкентай тесік үлкен кемені батырады.",a:"Бенджамин Франклин"},
-
-{q:"Көп адам ұнатпайтын адамдарды таңғалдыру үшін өзінде жоқ ақшаны жұмсайды.",a:"Уилл Роджерс"},
-
-{q:"Мақсат — көп ақша табу емес. Мақсат — өз ережеңмен өмір сүру.",a:"Крис Броган"},
-
-{q:"Қаржылық еркіндік оған үйреніп, сол үшін еңбек еткендерге ғана келеді.",a:"Роберт Кийосаки"},
-
-{q:"Қарыз алған сайын болашақтағы өзіңді тонап жатырсың.",a:"Натан Моррис"},
-
-{q:"Байлық — көп нәрсеге ие болу емес, аз нәрсені қалау.",a:"Эпиктет"},
-
-{q:"Бай адамдардың теледидары кішкентай, ал кітапханасы үлкен.",a:"Зиг Зиглар"},
-
-{q:"Қор биржасы — ақшаны шыдамсыздан шыдамдыға ауыстыратын құрал.",a:"Уоррен Баффет"},
-
-{q:"Ақша табандылық ағашында өседі.",a:"Жапон мақалы"},
-
-{q:"Сені бай ететін айлығың емес, қаржы әдеттерің.",a:"Чарльз Джаффе"},
+    {q:"Шығыннан қалғанды жинама, жинағаннан қалғанды жұмса.",a:"Уоррен Баффет"},
+    {q:"Білімге салынған инвестиция ең жоғары пайыз әкеледі.",a:"Бенджамин Франклин"},
+    {q:"Қанша табатының емес, қаншасын қалдыратының маңызды.",a:"Роберт Кийосаки"},
+    {q:"Ақша — қорқынышты қожайын, бірақ керемет қызметші.",a:"Финеас Барнум"},
+    {q:"Уақыт ақшадан қымбат. Ақшаны тағы табуға болады, уақытты — жоқ.",a:"Джим Рон"},
+    {q:"Кішкентай шығындардан сақтан — кішкентай тесік үлкен кемені батырады.",a:"Бенджамин Франклин"},
+    {q:"Көп адам ұнатпайтын адамдарды таң қалдыру үшін, табылмаған ақшаны жұмсайды.",a:"Уилл Роджерс"},
+    {q:"Мақсат — көп ақша емес. Мақсат — өз ережеңмен өмір сүру.",a:"Крис Броган"},
+    {q:"Қаржылық бостандық оны үйреніп, оған еңбек ететіндерге ғана қолжетімді.",a:"Роберт Кийосаки"},
+    {q:"Қарыз алған сайын болашақ өзіңді тонап жатырсың.",a:"Натан Моррис"},
+    {q:"Байлық — көп нәрсеге ие болуда емес, аз нәрсені қалауда.",a:"Эпиктет"},
+    {q:"Байлардың кішкентай теледидары мен үлкен кітапханасы бар.",a:"Зиг Зиглар"},
+    {q:"Қор биржасы — ақшаны асығатыннан шыдамдыға беретін құрал.",a:"Уоррен Баффет"},
+    {q:"Ақша табандылықтың ағашында өседі.",a:"Жапон мақалы"},
+    {q:"Сені бай ететін айлық емес, шығын әдеттерің.",a:"Чарльз Джаффе"},
   ]
 };
 // Helper to get the quote list for a given language with English fallback
@@ -543,9 +586,9 @@ Keep it to 1-2 sentences MAX. ${langGuidance} No preamble, no emoji overload (pe
     // If the API returned an error, surface it in the comment so the user can diagnose
     if(d.error){
       console.error("API error:",d.error);
+      track("ai_error",{message:(d.error.message||d.error.type||"unknown").slice(0,200)});
       return `(Error: ${d.error.message||d.error.type||"AI unavailable"})`;
     }
-    return d.content?.[0]?.text||null;
     return d.content?.[0]?.text||null;
   }catch(e){
     console.error("AI error:",e);
@@ -938,6 +981,11 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
       setLoading(false);
     }
     onSave(txn);
+    // Track count only — never amount, account name, category name, or note content
+    track("txn_create",{type:mode,currency:txnCurrency,has_note:!!note});
+    if((mode==="expense"||mode==="income")&&settings.aiEnabled){
+      track("ai_request",{language:settings.aiLanguage,pet:settings.aiPet,tone:settings.aiTone});
+    }
     onClose();
   };
 
@@ -1787,6 +1835,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,settings,onSett
               <button onClick={()=>{
                 if(!newAccName.trim())return;
                 onAccountsChange([...accounts,{id:uid(),name:newAccName.trim(),type:newAccType,currency:newAccType==="crypto"?"USDT":"KZT",balance:0,icon:newAccIcon||(newAccType==="bank"?"🏦":"💰"),color:"#10b981",isActive:true}]);
+                track("account_create",{type:newAccType});
                 setNewAccName("");
                 setNewAccIcon(newAccType==="bank"?"🏦":"💎");
               }} style={{background:"#10b981",border:"none",borderRadius:8,padding:"9px 14px",color:"#fff",cursor:"pointer",fontSize:16,fontWeight:700,flexShrink:0}}>+</button>
@@ -1954,6 +2003,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,settings,onSett
                   deadline:newGoalDeadline||null,
                   createdAt:new Date().toISOString()
                 }]);
+                track("goal_create");
                 setNewGoalName("");setNewGoalEmoji("🎯");setNewGoalAmount("");setNewGoalDeadline("");
               }} style={{background:"#10b981",border:"none",borderRadius:8,padding:"10px",color:"#fff",cursor:"pointer",fontSize:14,fontWeight:600,fontFamily:"system-ui,sans-serif"}}>+ Add Goal</button>
             </div>
@@ -2459,6 +2509,9 @@ function App(){
       const splash=document.getElementById("splash");
       if(splash){splash.classList.add("hidden");setTimeout(()=>splash.remove(),300);}
       setLoaded(true);
+
+      // Track this session for analytics — fire-and-forget, won't block anything
+      track("app_open");
 
       // Fetch live exchange rates in the background — refresh once per hour to avoid
       // hammering public APIs. Doesn't block app startup; if it fails, cached rates are used.
