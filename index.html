@@ -183,6 +183,8 @@ const track=(event_type,metadata={})=>{
     ai_pet:s.aiPet||null,
     ai_tone:s.aiTone||null,
     platform,
+    // Reminders preference — default ON if not set yet, so new users get reminders
+    reminders_enabled:s.remindersEnabled!==false,
     session_id:SESSION_ID,
     event_type,
     metadata
@@ -349,6 +351,8 @@ const DEF_SETTINGS={
   aiLanguage:"English",
   // App UI language — separate from AI language. Defaults to detected system/Telegram language.
   uiLanguage:null, // null means "auto-detect"; resolved at runtime in App component
+  // Daily reminders from the bot — default ON, user can disable in Settings
+  remindersEnabled:true,
   aiCustomPrompt:"",
   onboarded:false,
   // Exchange rates normalized to "1 UNIT = X KZT". Updated on app load via live API.
@@ -1780,7 +1784,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,settings,onSett
 
       {/* Quick Toggles */}
       <div style={{background:t.bgCard,borderRadius:14,padding:"14px 16px",border:`1px solid ${t.border}`,marginBottom:12}}>
-        {[{l:"🌙 Dark Mode",k:"darkMode"},{l:"🤖 AI Coach",k:"aiEnabled"}].map(({l,k},i)=>(
+        {[{l:"🌙 Dark Mode",k:"darkMode"},{l:"🤖 AI Coach",k:"aiEnabled"},{l:"🔔 Daily Reminders",k:"remindersEnabled"}].map(({l,k},i)=>(
           <div key={k} style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingBottom:i===0?12:0,borderBottom:i===0?`1px solid ${t.border}`:"none",paddingTop:i===1?12:0}}>
             <span style={{fontSize:15,fontWeight:500,color:t.text}}>{l}</span>
             <Toggle value={settings[k]} onChange={()=>onSettingsChange({...settings,[k]:!settings[k]})}/>
