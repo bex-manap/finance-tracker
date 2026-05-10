@@ -4,6 +4,10 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <title>Finance Tracker</title>
+<!-- Tabler Icons (outline webfont) — used in bottom navigation for cleaner, consistent visual weight than emoji.
+     Use the @tabler/icons-webfont package on jsDelivr — it bundles the CSS + font files (.woff2)
+     correctly. The cdnjs version only ships the CSS without the font files, so icons appear as empty squares. -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.30.0/dist/tabler-icons.min.css">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script>
 // Expand to full screen immediately, before anything else loads
@@ -146,6 +150,15 @@ const BANK_CURRENCIES=["KZT","USD","EUR"];
 const CRYPTO_CURRENCIES=["USDT","BTC","ETH"];
 const getAccountCurrencies=(accountType)=>accountType==="crypto"?CRYPTO_CURRENCIES:BANK_CURRENCIES;
 const fmtAmt=(n,c="KZT")=>`${sym[c]||c}${Math.abs(n).toLocaleString("en-US",{minimumFractionDigits:0,maximumFractionDigits:0})}`;
+// Format an amount compactly for tight cells: 1500 → "1.5K", 25000 → "25K", 1200000 → "1.2M"
+// Used in: home stats footer, calendar day cells, comparison bars
+const fmtCompact=(n)=>{
+  const abs=Math.abs(n);
+  if(abs===0)return"0";
+  if(abs>=1000000)return`${(n/1000000).toFixed(1).replace(/\.0$/,"")}M`;
+  if(abs>=1000)return`${(n/1000).toFixed(abs>=10000?0:1).replace(/\.0$/,"")}K`;
+  return Math.round(n).toString();
+};
 const fmtFull=(n,c="KZT")=>`${sym[c]||c}${Math.abs(n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 const toKZT=(a,c,r)=>c==="KZT"?a:a*(r[c]||1);
 const fromKZT=(a,c,r)=>c==="KZT"?a:a/(r[c]||1);
@@ -634,6 +647,8 @@ const TRANSLATIONS={
     "Income":"Доход","Spent":"Потрачено","Saved":"Накоплено","Net":"Чистый",
     "+ Income":"+ Доход","- Expense":"− Расход","⇄ Transfer":"⇄ Перевод",
     "My Accounts":"Мои счета","Recent Transactions":"Недавние операции",
+    "Good morning":"Доброе утро","Good afternoon":"Добрый день","Good evening":"Добрый вечер","Good night":"Доброй ночи",
+    "Last 10":"Последние 10",
     "Upcoming Fixed":"Постоянные расходы","Remaining budget":"Остаток бюджета",
     "Financial Wisdom":"Финансовая мудрость",
     "No transactions yet. Add your first one!":"Операций пока нет. Добавьте первую!",
@@ -691,6 +706,8 @@ const TRANSLATIONS={
     "Income":"Кіріс","Spent":"Жұмсалды","Saved":"Жинақталды","Net":"Таза",
     "+ Income":"+ Кіріс","- Expense":"− Шығыс","⇄ Transfer":"⇄ Аударым",
     "My Accounts":"Менің шоттарым","Recent Transactions":"Соңғы операциялар",
+    "Good morning":"Қайырлы таң","Good afternoon":"Қайырлы күн","Good evening":"Қайырлы кеш","Good night":"Қайырлы түн",
+    "Last 10":"Соңғы 10",
     "Upcoming Fixed":"Тұрақты шығындар","Remaining budget":"Қалған бюджет",
     "Financial Wisdom":"Қаржы даналығы",
     "No transactions yet. Add your first one!":"Операциялар жоқ. Алғашқысын қосыңыз!",
@@ -1263,6 +1280,17 @@ function GoalsCard({goals,transactions,settings,t}){
   );
 }
 
+// Time-aware greeting based on hour of day. Returns a translation key so the
+// caller can pass it through tr(). Picks Morning/Afternoon/Evening/Night.
+const getGreetingKey=()=>{
+  const h=new Date().getHours();
+  if(h<5) return "Good night";
+  if(h<12) return "Good morning";
+  if(h<17) return "Good afternoon";
+  if(h<22) return "Good evening";
+  return "Good night";
+};
+
 function HomeScreen({accounts,transactions,categories,fixedExpenses,goals,settings,onSettingsChange,onAddTxn,t,onTxnClick}){
   const{selectedCurrency,balanceHidden,exchangeRates}=settings;
   // Pick today's quote from the user's UI language. Use the same daily index across
@@ -1284,62 +1312,148 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,goals,settin
   });
   const totalFixed=upcomingFixed.reduce((s,fe)=>s+toKZT(fe.amount,fe.currency,exchangeRates),0);
   const remaining=monthIncome-monthExpense-totalFixed;
-  const recentTxns=transactions.slice().sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,5);
+  // Show last 10 transactions on the home screen, grouped by date for easier scanning.
+  // The grouping mirrors the History screen's pattern: a date header with daily total, then the rows.
+  const recentTxns=transactions.slice().sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,10);
+  // Group recent txns into [{ dateKey, label, dailyKzt, items: [...] }, ...] in display order
+  const recentByDate=useMemo(()=>{
+    const groups={};
+    recentTxns.forEach(tx=>{
+      const d=new Date(tx.date);
+      const key=`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+      if(!groups[key]){
+        groups[key]={
+          dateKey:key,
+          dateObj:d,
+          // "Mon, Apr 10" style — matches the History screen
+          label:d.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}),
+          items:[],
+          incomeKzt:0,
+          expenseKzt:0
+        };
+      }
+      groups[key].items.push(tx);
+      const kzt=toKZT(tx.amount,tx.currency,exchangeRates);
+      if(tx.type==="income")groups[key].incomeKzt+=kzt;
+      else if(tx.type==="expense")groups[key].expenseKzt+=kzt;
+    });
+    // Maintain newest-first order based on the most recent transaction's date
+    return Object.values(groups).sort((a,b)=>b.dateObj-a.dateObj);
+  },[recentTxns,exchangeRates]);
 
   return(
     <div style={{height:"100%",overflow:"auto",paddingBottom:16}}>
-      {/* Header gradient */}
-      <div style={{background:"linear-gradient(160deg,#0f2027,#203a43,#111827)",borderRadius:"0 0 28px 28px",padding:"calc(env(safe-area-inset-top, 20px) + 40px) 16px 24px"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
+      {/* ─── REFINED HEADER ─── */}
+      {/* No more dark gradient banner — the page background carries through. Cleaner, more spacious. */}
+      <div style={{padding:"calc(env(safe-area-inset-top, 20px) + 32px) 16px 0"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <div style={{display:"flex",alignItems:"center",gap:11}}>
             {settings.profilePicture
-              ?<img src={settings.profilePicture} style={{width:38,height:38,borderRadius:"50%",objectFit:"cover"}} alt="profile"/>
-              :<div style={{width:38,height:38,borderRadius:"50%",background:"#10b981",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:18,color:"#fff"}}>{(settings.displayName||"U")[0]}</div>}
+              ? <img src={settings.profilePicture} style={{width:42,height:42,borderRadius:"50%",objectFit:"cover",border:`2px solid ${t.bgCard}`}} alt="profile"/>
+              : <div style={{width:42,height:42,borderRadius:"50%",background:"linear-gradient(135deg,#10b981,#34d399)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:600,fontSize:17,color:"#fff"}}>{(settings.displayName||"U")[0]}</div>
+            }
             <div>
-              <div style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>{tr("Welcome back",settings.uiLanguage)}</div>
-              <div style={{fontSize:16,fontWeight:600,color:"#fff",fontFamily:"system-ui,sans-serif"}}>{settings.displayName}</div>
+              {/* Time-aware greeting + name on one line, no date underneath */}
+              <div style={{fontSize:12,color:t.textMuted,lineHeight:1.2}}>{tr(getGreetingKey(),settings.uiLanguage)}</div>
+              <div style={{fontSize:16,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif",lineHeight:1.2,marginTop:2}}>{settings.displayName}</div>
             </div>
           </div>
-          <div style={{display:"flex",gap:8}}>
-            <button onClick={cycleCur} style={{background:"rgba(255,255,255,0.12)",border:"none",borderRadius:8,padding:"6px 12px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"monospace"}}>{selectedCurrency}</button>
-            <button onClick={()=>onSettingsChange({...settings,darkMode:!settings.darkMode})} style={{background:"rgba(255,255,255,0.12)",border:"none",borderRadius:8,width:34,height:34,color:"#fff",fontSize:16,cursor:"pointer"}}>{settings.darkMode?"☀️":"🌙"}</button>
-          </div>
+          {/* Theme toggle stays in the corner — small, non-intrusive */}
+          <button
+            onClick={()=>onSettingsChange({...settings,darkMode:!settings.darkMode})}
+            style={{background:t.bgCard2,border:`1px solid ${t.border}`,borderRadius:"50%",width:38,height:38,color:t.textMuted,fontSize:15,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}
+            aria-label="Toggle theme">
+            {settings.darkMode?"☀️":"🌙"}
+          </button>
         </div>
-        <div style={{textAlign:"center",marginBottom:20}}>
-          <div style={{fontSize:13,color:"rgba(255,255,255,0.5)",marginBottom:8}}>{tr("Total Balance",settings.uiLanguage)}</div>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
-            <div style={{fontSize:38,fontWeight:700,color:"#fff",fontFamily:"system-ui,sans-serif",letterSpacing:"-1px"}}>
-              {balanceHidden?"••••••":fmtAmt(total,selectedCurrency)}
+
+        {/* ─── HERO BALANCE CARD ─── */}
+        {/* Decorative accent dot in corner, big monospace balance, eye toggle inline,
+            currency pill in top-right, and a clean 3-column mini-stats footer */}
+        <div style={{background:t.bgCard,border:`1px solid ${t.border}`,borderRadius:18,padding:"18px 16px",marginBottom:14,position:"relative",overflow:"hidden"}}>
+
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6,position:"relative"}}>
+            <div style={{fontSize:12,color:t.textMuted,display:"flex",alignItems:"center",gap:6}}>
+              <button
+                onClick={()=>onSettingsChange({...settings,balanceHidden:!balanceHidden})}
+                style={{background:"none",border:"none",cursor:"pointer",padding:0,fontSize:13,opacity:0.6}}
+                aria-label="Toggle balance visibility">
+                {balanceHidden?"🙈":"👁"}
+              </button>
+              {tr("Total Balance",settings.uiLanguage)}
             </div>
-            <button onClick={()=>onSettingsChange({...settings,balanceHidden:!balanceHidden})} style={{background:"rgba(255,255,255,0.12)",border:"none",borderRadius:8,width:32,height:32,color:"rgba(255,255,255,0.7)",fontSize:15,cursor:"pointer"}}>
-              {balanceHidden?"🙈":"👁"}
+            {/* Currency switcher pill — tap to cycle through KZT/USD/EUR/USDT */}
+            <button
+              onClick={cycleCur}
+              style={{background:t.bgCard2,border:`1px solid ${t.border}`,borderRadius:8,padding:"4px 10px",color:t.text,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"system-ui,sans-serif",display:"flex",alignItems:"center",gap:4}}>
+              {selectedCurrency} <span style={{fontSize:9,opacity:0.6}}>▾</span>
             </button>
           </div>
-          <div style={{display:"flex",justifyContent:"center",gap:28,marginTop:14}}>
-            <div style={{textAlign:"center"}}>
-              <div style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>{tr("Income",settings.uiLanguage)}</div>
-              <div style={{fontSize:16,fontWeight:600,color:"#10b981"}}>{fmtAmt(fromKZT(monthIncome,selectedCurrency,exchangeRates),selectedCurrency)}</div>
+
+          {/* Big balance — monospace for digit alignment, slight letter-spacing tightening */}
+          <div style={{fontSize:30,fontWeight:600,color:t.text,fontFamily:"ui-monospace,'SF Mono',monospace",letterSpacing:"-0.5px",marginBottom:14,position:"relative"}}>
+            {balanceHidden?"••••••":fmtAmt(total,selectedCurrency)}
+          </div>
+
+          {/* 3-column mini stats: income / spent / saved (this month) */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,paddingTop:12,borderTop:`1px solid ${t.border}`,position:"relative"}}>
+            <div>
+              <div style={{fontSize:10,color:t.textMuted,marginBottom:2,textTransform:"uppercase",letterSpacing:"0.4px"}}>{tr("Income",settings.uiLanguage)}</div>
+              <div style={{fontSize:13,fontWeight:600,color:"#10b981",fontFamily:"ui-monospace,monospace"}}>+{fmtCompact(fromKZT(monthIncome,selectedCurrency,exchangeRates))}</div>
             </div>
-            <div style={{width:1,background:"rgba(255,255,255,0.15)"}}/>
-            <div style={{textAlign:"center"}}>
-              <div style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>{tr("Spent",settings.uiLanguage)}</div>
-              <div style={{fontSize:16,fontWeight:600,color:"#ef4444"}}>{fmtAmt(fromKZT(monthExpense,selectedCurrency,exchangeRates),selectedCurrency)}</div>
+            <div>
+              <div style={{fontSize:10,color:t.textMuted,marginBottom:2,textTransform:"uppercase",letterSpacing:"0.4px"}}>{tr("Spent",settings.uiLanguage)}</div>
+              <div style={{fontSize:13,fontWeight:600,color:"#ef4444",fontFamily:"ui-monospace,monospace"}}>−{fmtCompact(fromKZT(monthExpense,selectedCurrency,exchangeRates))}</div>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:t.textMuted,marginBottom:2,textTransform:"uppercase",letterSpacing:"0.4px"}}>{tr("Saved",settings.uiLanguage)}</div>
+              <div style={{fontSize:13,fontWeight:600,color:"#fbbf24",fontFamily:"ui-monospace,monospace"}}>{fmtCompact(fromKZT(monthIncome-monthExpense,selectedCurrency,exchangeRates))}</div>
             </div>
           </div>
         </div>
-        <div style={{display:"flex",gap:8}}>
-          {[{l:`＋ ${tr("Income",settings.uiLanguage)}`,m:"income",c:"#10b981"},{l:`－ ${tr("Expense",settings.uiLanguage)}`,m:"expense",c:"#ef4444"},{l:`⇄ ${tr("Transfer",settings.uiLanguage)}`,m:"transfer",c:"#3b82f6"}].map(({l,m,c})=>(
-            <button key={m} onClick={()=>{haptic();onAddTxn(m);}} style={{flex:1,padding:"10px 0",borderRadius:12,border:`1.5px solid ${c}`,background:`${c}22`,color:c,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"system-ui,sans-serif"}}>{l}</button>
+
+        {/* ─── ACTION BUTTONS ─── */}
+        {/* Three colored cards instead of pill outlines. Bigger, more tap-friendly,
+            clearer color semantics (green=in, red=out, blue=move) */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
+          {[
+            {m:"income",l:tr("Income",settings.uiLanguage),icon:"↙",color:"#10b981",bg:"#10b98115"},
+            {m:"expense",l:tr("Expense",settings.uiLanguage),icon:"↗",color:"#ef4444",bg:"#ef444415"},
+            {m:"transfer",l:tr("Transfer",settings.uiLanguage),icon:"⇄",color:"#3b82f6",bg:"#3b82f615"}
+          ].map(({m,l,icon,color,bg})=>(
+            <button
+              key={m}
+              onClick={()=>{haptic();onAddTxn(m);}}
+              style={{
+                background:bg,
+                border:`1px solid ${color}33`,
+                borderRadius:14,
+                padding:"14px 6px",
+                cursor:"pointer",
+                display:"flex",
+                flexDirection:"column",
+                alignItems:"center",
+                gap:6,
+                fontFamily:"system-ui,sans-serif"
+              }}>
+              <div style={{width:32,height:32,borderRadius:"50%",background:color,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:16,fontWeight:700}}>{icon}</div>
+              <span style={{fontSize:12,fontWeight:600,color:t.text}}>{l}</span>
+            </button>
           ))}
         </div>
       </div>
 
-      <div style={{padding:"16px 16px 0"}}>
-        {/* Quote */}
-        <div style={{background:"linear-gradient(135deg,#064e3b,#065f46)",borderRadius:14,padding:"14px 16px",marginBottom:16}}>
-          <div style={{fontSize:11,color:"rgba(255,255,255,0.5)",marginBottom:4}}>💡 {tr("Financial Wisdom",settings.uiLanguage)}</div>
-          <div style={{fontSize:14,color:"#fff",lineHeight:1.55,fontStyle:"italic"}}>"{quote.q}"</div>
-          <div style={{fontSize:11,color:"rgba(255,255,255,0.5)",marginTop:6}}>— {quote.a}</div>
+      <div style={{padding:"0 16px"}}>
+        {/* ─── QUOTE CARD (REDESIGNED) ─── */}
+        {/* Subtle card matching the rest of the home, not a separate gradient banner.
+            Italic quote, author below, soft accent on the left edge. */}
+        <div style={{background:t.bgCard,border:`1px solid ${t.border}`,borderRadius:14,padding:"14px 16px",marginBottom:16,borderLeft:`3px solid #10b981`,display:"flex",gap:12,alignItems:"flex-start"}}>
+          <div style={{fontSize:18,opacity:0.7,marginTop:1}}>💡</div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:10,color:t.textMuted,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600}}>{tr("Financial Wisdom",settings.uiLanguage)}</div>
+            <div style={{fontSize:13,color:t.text,lineHeight:1.5,fontStyle:"italic"}}>"{quote.q}"</div>
+            <div style={{fontSize:11,color:t.textMuted,marginTop:6}}>— {quote.a}</div>
+          </div>
         </div>
 
         {/* Accounts */}
@@ -1384,51 +1498,81 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,goals,settin
         {/* Goals — savings progress with comparisons */}
         <GoalsCard goals={goals} transactions={transactions} settings={settings} t={t}/>
 
-        {/* Recent Transactions */}
+        {/* Recent Transactions — last 10, grouped by date for easier scanning */}
         <div style={{marginBottom:8}}>
-          <div style={{fontSize:16,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif",marginBottom:10}}>{tr("Recent Transactions",settings.uiLanguage)}</div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <div style={{fontSize:16,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif"}}>{tr("Recent Transactions",settings.uiLanguage)}</div>
+            {recentTxns.length>0&&(
+              <span style={{fontSize:11,color:t.textMuted,fontFamily:"system-ui,sans-serif"}}>{tr("Last 10",settings.uiLanguage)}</span>
+            )}
+          </div>
           {recentTxns.length===0&&(
             <div style={{textAlign:"center",padding:"32px",color:t.textMuted,fontSize:14}}>
               <div style={{fontSize:32,marginBottom:8}}>💰</div>
               No transactions yet. Add your first one!
             </div>
           )}
-          <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {recentTxns.map(txn=>{
-              const acc=accounts.find(a=>a.id===txn.accountId);
-              const toAcc=accounts.find(a=>a.id===txn.toAccountId);
-              const cat=categories.find(c=>c.id===txn.categoryId);
-              const color=txn.type==="expense"?"#ef4444":txn.type==="income"?"#10b981":"#3b82f6";
-              const sign=txn.type==="expense"?"-":txn.type==="income"?"+":"";
-              const isTransfer=txn.type==="transfer";
-              // Show both arrival amount alongside the outgoing amount when it's a cross-currency transfer
-              const showBothAmounts=isTransfer&&txn.toAmount!=null&&txn.toCurrency&&txn.toCurrency!==txn.currency;
+          {/* Iterate by date group, then by transaction */}
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            {recentByDate.map(group=>{
+              // Daily net flow shown next to the date label, like the History screen
+              const dailyNet=group.incomeKzt-group.expenseKzt;
+              const dailyDisplay=fromKZT(Math.abs(dailyNet),selectedCurrency,exchangeRates);
+              const dailySign=dailyNet>0?"+":dailyNet<0?"-":"";
+              const dailyColor=dailyNet>0?"#10b981":dailyNet<0?"#ef4444":t.textMuted;
               return(
-                <div key={txn.id} onClick={()=>onTxnClick(txn)} style={{background:t.bgCard,borderRadius:14,padding:"12px 14px",border:`1px solid ${t.border}`,cursor:"pointer"}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
-                    <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0,flex:1}}>
-                      <div style={{width:38,height:38,borderRadius:10,background:(isTransfer?"#3b82f6":(cat?.color||"#64748b"))+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{isTransfer?"⇄":cat?.icon||"💸"}</div>
-                      <div style={{minWidth:0,flex:1}}>
-                        <div style={{fontSize:14,fontWeight:500,color:t.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-                          {isTransfer?(
-                            <span>{acc?.name||"?"} <span style={{color:t.textMuted}}>→</span> {toAcc?.name||"?"}</span>
-                          ):(cat?.name||"Unknown")}
-                        </div>
-                        <div style={{fontSize:11,color:t.textMuted}}>
-                          {isTransfer?"Transfer":(acc?.name||"")} · {new Date(txn.date).toLocaleDateString("en-US",{month:"short",day:"numeric"})} · {fmtTime(txn.date)}
-                        </div>
+                <div key={group.dateKey}>
+                  {/* Date header row */}
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6,padding:"0 4px"}}>
+                    <div style={{fontSize:12,color:t.textMuted,fontWeight:500,fontFamily:"system-ui,sans-serif"}}>{group.label}</div>
+                    {dailyNet!==0&&(
+                      <div style={{fontSize:12,fontWeight:600,color:dailyColor,fontFamily:"monospace"}}>
+                        {dailySign}{fmtAmt(dailyDisplay,selectedCurrency)}
                       </div>
-                    </div>
-                    <div style={{textAlign:"right",flexShrink:0}}>
-                      <div style={{fontSize:16,fontWeight:700,color,fontFamily:"monospace"}}>{sign}{fmtAmt(txn.amount,txn.currency)}</div>
-                      {showBothAmounts&&(
-                        <div style={{fontSize:11,color:t.textMuted,fontFamily:"monospace",marginTop:2}}>→ +{fmtAmt(txn.toAmount,txn.toCurrency)}</div>
-                      )}
-                    </div>
+                    )}
                   </div>
-                  {txn.aiComment&&(
-                    <PetCommentBlock comment={txn.aiComment} petEmoji={(PETS[settings.aiPet]||PETS.dog).emoji} t={t}/>
-                  )}
+                  {/* Transactions for this date */}
+                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                    {group.items.map(txn=>{
+                      const acc=accounts.find(a=>a.id===txn.accountId);
+                      const toAcc=accounts.find(a=>a.id===txn.toAccountId);
+                      const cat=categories.find(c=>c.id===txn.categoryId);
+                      const color=txn.type==="expense"?"#ef4444":txn.type==="income"?"#10b981":"#3b82f6";
+                      const sign=txn.type==="expense"?"-":txn.type==="income"?"+":"";
+                      const isTransfer=txn.type==="transfer";
+                      // Show both arrival amount alongside the outgoing amount when it's a cross-currency transfer
+                      const showBothAmounts=isTransfer&&txn.toAmount!=null&&txn.toCurrency&&txn.toCurrency!==txn.currency;
+                      return(
+                        <div key={txn.id} onClick={()=>onTxnClick(txn)} style={{background:t.bgCard,borderRadius:14,padding:"12px 14px",border:`1px solid ${t.border}`,cursor:"pointer"}}>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+                            <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0,flex:1}}>
+                              <div style={{width:38,height:38,borderRadius:10,background:(isTransfer?"#3b82f6":(cat?.color||"#64748b"))+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{isTransfer?"⇄":cat?.icon||"💸"}</div>
+                              <div style={{minWidth:0,flex:1}}>
+                                <div style={{fontSize:14,fontWeight:500,color:t.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                                  {isTransfer?(
+                                    <span>{acc?.name||"?"} <span style={{color:t.textMuted}}>→</span> {toAcc?.name||"?"}</span>
+                                  ):(cat?.name||"Unknown")}
+                                </div>
+                                {/* Date is now shown in the group header, so omit it from the row to reduce noise */}
+                                <div style={{fontSize:11,color:t.textMuted}}>
+                                  {fmtTime(txn.date)} · {isTransfer?"Transfer":(acc?.name||"")}{txn.note?` · ${txn.note}`:""}
+                                </div>
+                              </div>
+                            </div>
+                            <div style={{textAlign:"right",flexShrink:0}}>
+                              <div style={{fontSize:16,fontWeight:700,color,fontFamily:"monospace"}}>{sign}{fmtAmt(txn.amount,txn.currency)}</div>
+                              {showBothAmounts&&(
+                                <div style={{fontSize:11,color:t.textMuted,fontFamily:"monospace",marginTop:2}}>→ +{fmtAmt(txn.toAmount,txn.toCurrency)}</div>
+                              )}
+                            </div>
+                          </div>
+                          {txn.aiComment&&(
+                            <PetCommentBlock comment={txn.aiComment} petEmoji={(PETS[settings.aiPet]||PETS.dog).emoji} t={t}/>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               );
             })}
@@ -1517,14 +1661,6 @@ function AnalyticsScreen({transactions,categories,settings,t}){
     return arr;
   },[transactions,calYear,calMonth,daysInMonth,exchangeRates]);
   const calMonthTotal=dayTotals.reduce((s,d)=>s+d.amount,0);
-
-  // Format an amount compactly for tight calendar cells: 1500 → "1.5K", 25000 → "25K", 1200000 → "1.2M"
-  const fmtCompact=(n)=>{
-    if(n===0)return"";
-    if(n>=1000000)return`${(n/1000000).toFixed(1).replace(/\.0$/,"")}M`;
-    if(n>=1000)return`${(n/1000).toFixed(n>=10000?0:1).replace(/\.0$/,"")}K`;
-    return Math.round(n).toString();
-  };
 
   const presets=[
     {k:"last7",l:"7d"},
@@ -3038,12 +3174,14 @@ function App(){
   }
 
   const lang=settings.uiLanguage||"English";
+  // Tab icons use Tabler Icons (outline style) — loaded via CSS link in <head>.
+  // Format: "ti ti-NAME" — NAME is the icon's slug from tabler.io/icons
   const TABS=[
-    {k:"home",icon:"🏠",label:tr("Home",lang)},
-    {k:"analytics",icon:"📊",label:tr("Analytics",lang)},
-    {k:"__add__",icon:"＋",label:""},
-    {k:"history",icon:"📋",label:tr("History",lang)},
-    {k:"settings",icon:"⚙️",label:tr("Settings",lang)},
+    {k:"home",     icon:"ti ti-home",      label:tr("Home",lang)},
+    {k:"analytics",icon:"ti ti-chart-pie", label:tr("Analytics",lang)},
+    {k:"__add__",  icon:"ti ti-plus",      label:""},
+    {k:"history",  icon:"ti ti-clock",     label:tr("History",lang)},
+    {k:"settings", icon:"ti ti-settings",  label:tr("Settings",lang)},
   ];
 
   return(
@@ -3061,10 +3199,14 @@ function App(){
           return(
             <button key={k} onClick={()=>{haptic();if(isAdd){setAddMode("expense");setAddModal(true);}else setTab(k);}} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3,background:"none",border:"none",cursor:"pointer",padding:"4px 0"}}>
               {isAdd?(
-                <div style={{width:50,height:50,borderRadius:"50%",background:"#10b981",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,color:"#fff",marginTop:-18,boxShadow:"0 4px 20px rgba(16,185,129,0.55)",fontWeight:300}}>＋</div>
+                /* Center "+" button — bigger, prominent, gradient green */
+                <div style={{width:50,height:50,borderRadius:"50%",background:"linear-gradient(135deg,#10b981,#34d399)",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",marginTop:-18,boxShadow:"0 4px 20px rgba(16,185,129,0.55)"}}>
+                  <i className={icon} style={{fontSize:26}} aria-hidden="true"/>
+                </div>
               ):(
                 <>
-                  <div style={{fontSize:22,filter:active?"none":"grayscale(80%)",opacity:active?1:0.55,transition:"opacity .15s"}}>{icon}</div>
+                  {/* Tabler icon — colors handled by parent so active/inactive state animates the same as text */}
+                  <i className={icon} style={{fontSize:22,color:active?t.accent:t.textMuted,opacity:active?1:0.7,transition:"all .15s"}} aria-hidden="true"/>
                   <div style={{fontSize:10,fontWeight:active?600:400,color:active?t.accent:t.textMuted,fontFamily:"system-ui,sans-serif",transition:"color .15s"}}>{label}</div>
                 </>
               )}
