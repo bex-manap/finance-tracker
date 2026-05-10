@@ -681,6 +681,41 @@ const TRANSLATIONS={
     "Tone":"Тон","Language":"Язык","Custom Prompt Prefix":"Дополнение к промпту",
     "Your AI Companion":"Ваш ИИ-питомец","Refresh rates now":"Обновить курсы",
     "App Language":"Язык приложения","AI Language":"Язык ИИ",
+    "FAQ":"Частые вопросы","Contact":"Связаться",
+    "Telegram":"Telegram","Email":"Email",
+    "Have feedback, found a bug, or have a feature suggestion? Reach out — I genuinely read every message.":"Есть отзыв, нашли ошибку или хотите предложить функцию? Напишите — я читаю все сообщения.",
+    // FAQ — questions and answers
+    "Where is my data stored?":"Где хранятся мои данные?",
+    "Your data is stored privately in Telegram CloudStorage, tied to your Telegram account. It's not visible to anyone else, including the app developer. It syncs automatically across devices when you log in with the same Telegram account.":"Данные хранятся в Telegram CloudStorage, привязаны к вашему аккаунту Telegram. Никто другой их не видит, включая разработчика. Они автоматически синхронизируются между устройствами, если вы заходите с того же аккаунта Telegram.",
+    "Is my financial data shared with anyone?":"Передаются ли мои финансовые данные кому-либо?",
+    "No. Transaction amounts, account balances, and notes never leave your Telegram CloudStorage. The app only sends anonymous usage statistics (e.g., which features you use, what language you picked) to help improve the app — never your actual financial data.":"Нет. Суммы транзакций, балансы счетов и заметки никогда не покидают ваш Telegram CloudStorage. Приложение отправляет только анонимную статистику использования (например, какие функции вы используете, какой язык выбрали), чтобы улучшать приложение — никогда сами финансовые данные.",
+    "How do exchange rates work?":"Как работают курсы валют?",
+    "Exchange rates update automatically once per hour from open public APIs (open.er-api.com for fiat, CoinGecko for crypto). When you create a transaction in a different currency, it's converted to KZT using the current rate. You can also manually edit rates in Settings → Exchange Rates if you want to lock specific values.":"Курсы обновляются автоматически раз в час из открытых публичных API (open.er-api.com для фиата, CoinGecko для крипто). Когда вы создаёте транзакцию в другой валюте, она конвертируется в тенге по текущему курсу. Вы также можете вручную править курсы в Настройки → Курсы валют, если хотите зафиксировать определённые значения.",
+    "What's the difference between income and a transfer?":"В чём разница между доходом и переводом?",
+    "Income is new money entering your accounts (salary, freelance, gifts). Transfers are moving money between your own accounts (e.g., Freedom Bank → Kaspi) — they don't change your total balance. The Home stats only count income/expenses, not transfers.":"Доход — это новые деньги, поступающие на ваши счета (зарплата, фриланс, подарки). Переводы — это движение денег между вашими собственными счетами (напр. Freedom Bank → Kaspi); они не меняют общий баланс. Статистика на главной учитывает только доходы/расходы, не переводы.",
+    "How do Savings Goals work?":"Как работают Цели накопления?",
+    "Goals are virtual reservations — when you 'contribute' to a goal, your account balances stay the same. The contribution just records your intent to save toward that goal. This way your real cash stays accurate while you track progress separately.":"Цели — это виртуальные резервации. Когда вы «пополняете» цель, балансы счетов не меняются. Пополнение просто фиксирует ваше намерение копить на эту цель. Так реальный остаток денег остаётся точным, а прогресс по цели отслеживается отдельно.",
+    "What does the AI Pet Coach do?":"Что делает ИИ-питомец?",
+    "After you log income or expense transactions, your chosen pet (dog or cat) writes a short comment about it — encouraging, judgmental, or harsh, depending on the tone you picked in Settings. It's powered by Anthropic's Claude AI. You can disable it anytime in Settings.":"После записи дохода или расхода ваш питомец (собака или кот) пишет короткий комментарий — поддерживающий, осуждающий или жёсткий, в зависимости от тона, выбранного в настройках. Работает на ИИ Claude от Anthropic. Можно отключить в любой момент в настройках.",
+    "How are reminders sent?":"Как отправляются напоминания?",
+    "If reminders are enabled, the bot sends you one short message per day (~8 PM local time) if you haven't been active in the last 12 hours. It's a different message every day, in your chosen language, with your pet's personality.":"Если напоминания включены, бот отправляет одно короткое сообщение в день (около 20:00 по местному времени), если вы не были активны последние 12 часов. Каждый день — новое сообщение, на выбранном языке, с характером вашего питомца.",
+    "Can I edit a transaction after creating it?":"Можно ли редактировать транзакцию после создания?",
+    "Currently you can only delete a transaction and create a new one. This was a deliberate design choice to avoid subtle balance bugs. We may add full editing later if there's demand.":"Сейчас можно только удалить транзакцию и создать новую. Это сделано специально, чтобы избежать незаметных багов с балансами. Возможно, позже добавим полное редактирование, если будет спрос.",
+    "How do I add a new bank or crypto wallet?":"Как добавить новый банк или крипто-кошелёк?",
+    "Go to Settings → Accounts and tap the + button. You can pick from common Kazakh banks (Freedom, Kaspi, Halyk, etc.) and crypto exchanges (Binance, Bybit, Redot, etc.) or add custom ones.":"Зайдите в Настройки → Счета и нажмите кнопку +. Можно выбрать популярные банки Казахстана (Freedom, Kaspi, Halyk и др.) и крипто-биржи (Binance, Bybit, Redot и др.) или добавить свои.",
+    "What if I want to see specific dates of transactions?":"Что если я хочу видеть конкретные даты транзакций?",
+    "Go to the Analytics tab → 'Overview' for a calendar heatmap showing your spending by day, or 'My Progress' to compare different time periods (weeks/months). The History tab shows all transactions grouped by date.":"Перейдите во вкладку Аналитика → «Обзор», чтобы увидеть календарь с расходами по дням, или «Мой прогресс», чтобы сравнить разные периоды (недели/месяцы). Вкладка История показывает все транзакции, сгруппированные по датам.",
+    "Can I use this app outside Telegram?":"Можно ли пользоваться приложением вне Telegram?",
+    "Currently no — the app is built as a Telegram Mini App and uses Telegram CloudStorage for your data. A standalone web/PWA version may come later if there's enough interest.":"Пока нет — приложение сделано как Telegram Mini App и хранит данные в Telegram CloudStorage. Отдельная веб/PWA-версия может появиться позже, если будет достаточный интерес.",
+    "How do I export my data?":"Как экспортировать мои данные?",
+    "Go to Settings → scroll to 'Download CSV'. You'll get a file with all your transactions and current account balances that opens in Excel, Numbers, or Google Sheets.":"Зайдите в Настройки → пролистайте до «Скачать CSV». Получите файл со всеми транзакциями и текущими балансами счетов; открывается в Excel, Numbers или Google Sheets.",
+    "What if I lose my phone?":"Что если я потеряю телефон?",
+    "Your data is in Telegram CloudStorage, not on your phone. Just install Telegram on your new device, log into the same account, open the bot, and everything will sync.":"Ваши данные хранятся в Telegram CloudStorage, а не на телефоне. Просто установите Telegram на новом устройстве, войдите в тот же аккаунт, откройте бота — всё синхронизируется.",
+    "How can I delete all my data?":"Как удалить все мои данные?",
+    "Settings → scroll to the bottom → 🗑️ Reset All Data. This wipes everything from your Telegram CloudStorage and the device. It cannot be undone.":"Настройки → в самом низу → 🗑️ Сбросить все данные. Это удалит всё из Telegram CloudStorage и с устройства. Действие необратимо.",
+    "Is this app free?":"Приложение бесплатное?",
+    "Yes, completely free. No ads, no premium tier, no subscriptions. If you'd like to support development, reach out via the Contact section in Settings.":"Да, полностью бесплатное. Без рекламы, премиум-уровней и подписок. Если хотите поддержать разработку — напишите через раздел Связаться в настройках.",
+    "Go to History to view all transactions":"Открыть Историю, чтобы увидеть все транзакции",
     "Auto (System)":"Авто (система)",
     // Goals
     "Savings Goals":"Цели накопления","Remaining":"Осталось","equivalent of":"равно",
@@ -742,6 +777,41 @@ const TRANSLATIONS={
     "Tone":"Стиль","Language":"Тіл","Custom Prompt Prefix":"Промптқа қосымша",
     "Your AI Companion":"ЖИ серігіңіз","Refresh rates now":"Бағамдарды жаңарту",
     "App Language":"Қолданба тілі","AI Language":"ЖИ тілі",
+    "FAQ":"Жиі қойылатын сұрақтар","Contact":"Байланыс",
+    "Telegram":"Telegram","Email":"Email",
+    "Have feedback, found a bug, or have a feature suggestion? Reach out — I genuinely read every message.":"Пікіріңіз, тапқан қате немесе ұсыныс бар ма? Хабарласыңыз — әр хатты оқимын.",
+    // FAQ — questions and answers (Kazakh)
+    "Where is my data stored?":"Менің деректерім қайда сақталады?",
+    "Your data is stored privately in Telegram CloudStorage, tied to your Telegram account. It's not visible to anyone else, including the app developer. It syncs automatically across devices when you log in with the same Telegram account.":"Деректер Telegram CloudStorage-те, сіздің Telegram аккаунтыңызға байланған түрде сақталады. Оларды басқа ешкім, оның ішінде қолданба әзірлеушісі де көрмейді. Сол Telegram аккаунтымен кірген кезде құрылғылар арасында автоматты түрде синхрондалады.",
+    "Is my financial data shared with anyone?":"Қаржылық деректерім біреумен бөлісіле ме?",
+    "No. Transaction amounts, account balances, and notes never leave your Telegram CloudStorage. The app only sends anonymous usage statistics (e.g., which features you use, what language you picked) to help improve the app — never your actual financial data.":"Жоқ. Транзакция сомалары, шот баланстары мен жазбалар Telegram CloudStorage-тен ешқашан шықпайды. Қолданба тек анонимді қолдану статистикасын (мысалы, қандай функцияларды қолданасыз, қандай тілді таңдадыңыз) қолданбаны жақсарту үшін жібереді — ешқашан нақты қаржылық деректерді емес.",
+    "How do exchange rates work?":"Айырбас бағамдары қалай жұмыс істейді?",
+    "Exchange rates update automatically once per hour from open public APIs (open.er-api.com for fiat, CoinGecko for crypto). When you create a transaction in a different currency, it's converted to KZT using the current rate. You can also manually edit rates in Settings → Exchange Rates if you want to lock specific values.":"Бағамдар сағат сайын ашық API арқылы автоматты түрде жаңарып отырады (фиат үшін open.er-api.com, крипто үшін CoinGecko). Басқа валютада транзакция жасағанда, ол ағымдағы бағаммен теңгеге аударылады. Қаласаңыз, нақты мәндерді бекіту үшін Параметрлер → Айырбас бағамдары бөлімінде бағамдарды қолмен өзгертуге болады.",
+    "What's the difference between income and a transfer?":"Кіріс пен аударымның айырмашылығы неде?",
+    "Income is new money entering your accounts (salary, freelance, gifts). Transfers are moving money between your own accounts (e.g., Freedom Bank → Kaspi) — they don't change your total balance. The Home stats only count income/expenses, not transfers.":"Кіріс — шоттарыңызға жаңадан түсетін ақша (жалақы, фриланс, сыйлықтар). Аударым — өз шоттарыңыздың арасында ақша қозғалысы (мыс. Freedom Bank → Kaspi); ол жалпы балансты өзгертпейді. Басты беттегі статистика тек кіріс/шығысты есепке алады, аударымдарды емес.",
+    "How do Savings Goals work?":"Жинақтау мақсаттары қалай жұмыс істейді?",
+    "Goals are virtual reservations — when you 'contribute' to a goal, your account balances stay the same. The contribution just records your intent to save toward that goal. This way your real cash stays accurate while you track progress separately.":"Мақсаттар — виртуалды резервтер. Сіз мақсатты «толықтырғанда» шот баланстары өзгермейді. Толықтыру тек сіздің сол мақсатқа жинау ниетіңізді жазып қояды. Осылайша нақты ақша балансы дұрыс күйінде қалады, ал мақсаттың ілгерілеуі бөлек есепке алынады.",
+    "What does the AI Pet Coach do?":"ЖИ серігі не істейді?",
+    "After you log income or expense transactions, your chosen pet (dog or cat) writes a short comment about it — encouraging, judgmental, or harsh, depending on the tone you picked in Settings. It's powered by Anthropic's Claude AI. You can disable it anytime in Settings.":"Сіз кіріс немесе шығысты жазғаннан кейін таңдаған серігіңіз (ит немесе мысық) ол туралы қысқа пікір жазады — Параметрлерде таңдаған тоныңызға қарай қолдау, сын немесе қатаң түрде. Anthropic компаниясының Claude ЖИ-мен жұмыс істейді. Кез келген уақытта Параметрлерден өшіруге болады.",
+    "How are reminders sent?":"Еске салулар қалай жіберіледі?",
+    "If reminders are enabled, the bot sends you one short message per day (~8 PM local time) if you haven't been active in the last 12 hours. It's a different message every day, in your chosen language, with your pet's personality.":"Еске салу қосылса, бот соңғы 12 сағатта белсенді болмасаңыз күніне бір қысқа хабарлама жібереді (жергілікті уақытпен шамамен 20:00). Күн сайын бөлек хабарлама, таңдаған тіліңізде, серігіңіздің мінезімен.",
+    "Can I edit a transaction after creating it?":"Транзакцияны жасағаннан кейін өңдей аламын ба?",
+    "Currently you can only delete a transaction and create a new one. This was a deliberate design choice to avoid subtle balance bugs. We may add full editing later if there's demand.":"Қазіргі уақытта тек транзакцияны жойып, жаңасын жасауға болады. Бұл баланспен байланысты байқалмайтын қателерден қашу үшін әдейі шешілген. Сұраныс болса, кейін толық өңдеуді қосуымыз мүмкін.",
+    "How do I add a new bank or crypto wallet?":"Жаңа банк немесе крипто-әмиян қалай қосамын?",
+    "Go to Settings → Accounts and tap the + button. You can pick from common Kazakh banks (Freedom, Kaspi, Halyk, etc.) and crypto exchanges (Binance, Bybit, Redot, etc.) or add custom ones.":"Параметрлер → Шоттар бөліміне кіріп, + түймесін басыңыз. Қазақстанның танымал банктерін (Freedom, Kaspi, Halyk т.б.) және крипто-биржаларын (Binance, Bybit, Redot т.б.) таңдай аласыз немесе өзіңіздікін қосасыз.",
+    "What if I want to see specific dates of transactions?":"Транзакциялардың нақты күндерін көргім келсе ше?",
+    "Go to the Analytics tab → 'Overview' for a calendar heatmap showing your spending by day, or 'My Progress' to compare different time periods (weeks/months). The History tab shows all transactions grouped by date.":"Аналитика қойындысы → «Шолу» бөлімінде шығысты күндер бойынша көрсететін календарь бар. «Менің прогресс» бөлімінде әртүрлі кезеңдерді (апта/ай) салыстыруға болады. Тарих қойындысында барлық транзакциялар күн бойынша топталып көрсетіледі.",
+    "Can I use this app outside Telegram?":"Қолданбаны Telegram-нан тыс пайдалана аламын ба?",
+    "Currently no — the app is built as a Telegram Mini App and uses Telegram CloudStorage for your data. A standalone web/PWA version may come later if there's enough interest.":"Қазіргі уақытта жоқ — қолданба Telegram Mini App ретінде жасалған және деректерді Telegram CloudStorage-те сақтайды. Жеткілікті қызығушылық болса, кейін веб/PWA нұсқасы шығуы мүмкін.",
+    "How do I export my data?":"Деректерімді қалай экспорттаймын?",
+    "Go to Settings → scroll to 'Download CSV'. You'll get a file with all your transactions and current account balances that opens in Excel, Numbers, or Google Sheets.":"Параметрлерге кіріп, «CSV жүктеп алу» бөліміне жетіңіз. Excel, Numbers немесе Google Sheets-те ашылатын барлық транзакциялар мен ағымдағы шот баланстары бар файл аласыз.",
+    "What if I lose my phone?":"Телефонымды жоғалтып алсам ше?",
+    "Your data is in Telegram CloudStorage, not on your phone. Just install Telegram on your new device, log into the same account, open the bot, and everything will sync.":"Деректер телефонда емес, Telegram CloudStorage-те. Жаңа құрылғыға Telegram орнатып, сол аккаунтпен кіріңіз де, ботты ашыңыз — бәрі синхрондалады.",
+    "How can I delete all my data?":"Барлық деректерімді қалай жоямын?",
+    "Settings → scroll to the bottom → 🗑️ Reset All Data. This wipes everything from your Telegram CloudStorage and the device. It cannot be undone.":"Параметрлер → ең төменге айналдырыңыз → 🗑️ Барлық деректерді өшіру. Бұл Telegram CloudStorage-тен және құрылғыдан барлығын өшіреді. Қайтару мүмкін емес.",
+    "Is this app free?":"Қолданба тегін бе?",
+    "Yes, completely free. No ads, no premium tier, no subscriptions. If you'd like to support development, reach out via the Contact section in Settings.":"Иә, толығымен тегін. Жарнама, премиум деңгей, жазылым жоқ. Әзірлеуді қолдағыңыз келсе, Параметрлердегі Байланыс бөлімі арқылы жазыңыз.",
+    "Go to History to view all transactions":"Барлық транзакцияны көру үшін Тарихқа өтіңіз",
     "Auto (System)":"Авто (жүйе)",
     "Savings Goals":"Жинақтау мақсаттары","Remaining":"Қалды","equivalent of":"тең",
     "Contribute":"Толықтыру","Contribute to":"Толықтыру","Amount":"Сома",
@@ -1477,7 +1547,7 @@ const getGreetingKey=()=>{
   return "Good night";
 };
 
-function HomeScreen({accounts,transactions,categories,fixedExpenses,goals,settings,onSettingsChange,onAddTxn,onGoalsChange,t,onTxnClick}){
+function HomeScreen({accounts,transactions,categories,fixedExpenses,goals,settings,onSettingsChange,onAddTxn,onGoalsChange,onTabChange,t,onTxnClick}){
   const{selectedCurrency,balanceHidden,exchangeRates}=settings;
   // Pick today's quote from the user's UI language. Use the same daily index across
   // all languages so the same wisdom appears in different languages on the same day.
@@ -1765,6 +1835,31 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,goals,settin
               );
             })}
           </div>
+          {/* "Go to History" hint — only shown when there are transactions, gives a way to see more.
+              Tapping switches to the History tab via the onTabChange callback. */}
+          {recentTxns.length>0&&(
+            <button
+              onClick={()=>{haptic();onTabChange&&onTabChange("history");}}
+              style={{
+                width:"100%",
+                marginTop:14,
+                background:"transparent",
+                border:`1px dashed ${t.border}`,
+                borderRadius:12,
+                padding:"12px",
+                color:t.textMuted,
+                fontSize:12,
+                cursor:"pointer",
+                fontFamily:"system-ui,sans-serif",
+                display:"flex",
+                alignItems:"center",
+                justifyContent:"center",
+                gap:6
+              }}>
+              <i className="ti ti-history" style={{fontSize:14}} aria-hidden="true"/>
+              {tr("Go to History to view all transactions",settings.uiLanguage)}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -2345,6 +2440,105 @@ function HistoryScreen({transactions,accounts,categories,settings,onTxnClick,t})
 }
 
 // ── SETTINGS SCREEN ──
+// ── FAQ DATA ──
+// Each entry is a question + answer pair. Both fields go through the translation system,
+// so tr() will pull the localized version if available, or fall back to English.
+// Keep answers short and direct — users skim, they don't read.
+const FAQ_ITEMS=[
+  {
+    q:"Where is my data stored?",
+    a:"Your data is stored privately in Telegram CloudStorage, tied to your Telegram account. It's not visible to anyone else, including the app developer. It syncs automatically across devices when you log in with the same Telegram account."
+  },
+  {
+    q:"Is my financial data shared with anyone?",
+    a:"No. Transaction amounts, account balances, and notes never leave your Telegram CloudStorage. The app only sends anonymous usage statistics (e.g., which features you use, what language you picked) to help improve the app — never your actual financial data."
+  },
+  {
+    q:"How do exchange rates work?",
+    a:"Exchange rates update automatically once per hour from open public APIs (open.er-api.com for fiat, CoinGecko for crypto). When you create a transaction in a different currency, it's converted to KZT using the current rate. You can also manually edit rates in Settings → Exchange Rates if you want to lock specific values."
+  },
+  {
+    q:"What's the difference between income and a transfer?",
+    a:"Income is new money entering your accounts (salary, freelance, gifts). Transfers are moving money between your own accounts (e.g., Freedom Bank → Kaspi) — they don't change your total balance. The Home stats only count income/expenses, not transfers."
+  },
+  {
+    q:"How do Savings Goals work?",
+    a:"Goals are virtual reservations — when you 'contribute' to a goal, your account balances stay the same. The contribution just records your intent to save toward that goal. This way your real cash stays accurate while you track progress separately."
+  },
+  {
+    q:"What does the AI Pet Coach do?",
+    a:"After you log income or expense transactions, your chosen pet (dog or cat) writes a short comment about it — encouraging, judgmental, or harsh, depending on the tone you picked in Settings. It's powered by Anthropic's Claude AI. You can disable it anytime in Settings."
+  },
+  {
+    q:"How are reminders sent?",
+    a:"If reminders are enabled, the bot sends you one short message per day (~8 PM local time) if you haven't been active in the last 12 hours. It's a different message every day, in your chosen language, with your pet's personality."
+  },
+  {
+    q:"Can I edit a transaction after creating it?",
+    a:"Currently you can only delete a transaction and create a new one. This was a deliberate design choice to avoid subtle balance bugs. We may add full editing later if there's demand."
+  },
+  {
+    q:"How do I add a new bank or crypto wallet?",
+    a:"Go to Settings → Accounts and tap the + button. You can pick from common Kazakh banks (Freedom, Kaspi, Halyk, etc.) and crypto exchanges (Binance, Bybit, Redot, etc.) or add custom ones."
+  },
+  {
+    q:"What if I want to see specific dates of transactions?",
+    a:"Go to the Analytics tab → 'Overview' for a calendar heatmap showing your spending by day, or 'My Progress' to compare different time periods (weeks/months). The History tab shows all transactions grouped by date."
+  },
+  {
+    q:"Can I use this app outside Telegram?",
+    a:"Currently no — the app is built as a Telegram Mini App and uses Telegram CloudStorage for your data. A standalone web/PWA version may come later if there's enough interest."
+  },
+  {
+    q:"How do I export my data?",
+    a:"Go to Settings → scroll to 'Download CSV'. You'll get a file with all your transactions and current account balances that opens in Excel, Numbers, or Google Sheets."
+  },
+  {
+    q:"What if I lose my phone?",
+    a:"Your data is in Telegram CloudStorage, not on your phone. Just install Telegram on your new device, log into the same account, open the bot, and everything will sync."
+  },
+  {
+    q:"How can I delete all my data?",
+    a:"Settings → scroll to the bottom → 🗑️ Reset All Data. This wipes everything from your Telegram CloudStorage and the device. It cannot be undone."
+  },
+  {
+    q:"Is this app free?",
+    a:"Yes, completely free. No ads, no premium tier, no subscriptions. If you'd like to support development, reach out via the Contact section in Settings."
+  }
+];
+
+// FAQ accordion row — collapsed by default, expands on tap
+function FAQRow({q,a,t,isLast}){
+  const[open,setOpen]=useState(false);
+  return(
+    <div style={{borderBottom:isLast?"none":`1px solid ${t.border}`}}>
+      <button
+        onClick={()=>setOpen(!open)}
+        style={{
+          width:"100%",
+          background:"transparent",
+          border:"none",
+          padding:"14px 12px",
+          display:"flex",
+          alignItems:"flex-start",
+          justifyContent:"space-between",
+          gap:10,
+          cursor:"pointer",
+          textAlign:"left",
+          fontFamily:"system-ui,sans-serif"
+        }}>
+        <div style={{flex:1,fontSize:13,fontWeight:open?600:500,color:t.text,lineHeight:1.4}}>{q}</div>
+        <i className={open?"ti ti-chevron-up":"ti ti-chevron-down"} style={{fontSize:16,color:t.textMuted,flexShrink:0,marginTop:2,transition:"transform .2s"}} aria-hidden="true"/>
+      </button>
+      {open&&(
+        <div className="fade-in" style={{padding:"0 12px 14px",fontSize:12,color:t.textMuted,lineHeight:1.55}}>
+          {a}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SettingsScreen({accounts,categories,fixedExpenses,goals,settings,onSettingsChange,onAccountsChange,onCategoriesChange,onFixedChange,onGoalsChange,onReset,onRefreshRates,onExport,t}){
   const[sec,setSec]=useState(null);
   const[editAccId,setEditAccId]=useState(null);
@@ -2774,6 +2968,58 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,settings,onSett
           Includes all transactions and current account balances. Opens in Excel, Numbers, or Google Sheets.
         </div>
       </div>
+
+      {/* ─── FAQ ─── */}
+      {/* Common questions users ask. Expandable accordion to save space. */}
+      <Section k="faq" label={tr("FAQ",settings.uiLanguage)} icon="❓"/>
+      {sec==="faq"&&(
+        <div style={{background:t.bgCard2,borderRadius:12,padding:"4px",border:`1px solid ${t.border}`,marginBottom:8}}>
+          {FAQ_ITEMS.map((item,i)=>(
+            <FAQRow key={i} q={tr(item.q,settings.uiLanguage)} a={tr(item.a,settings.uiLanguage)} t={t} isLast={i===FAQ_ITEMS.length-1}/>
+          ))}
+        </div>
+      )}
+
+      {/* ─── CONTACT ─── */}
+      {/* Direct contact info for support / feedback. Tap-to-open for both Telegram and Gmail. */}
+      <Section k="contact" label={tr("Contact",settings.uiLanguage)} icon="✉️"/>
+      {sec==="contact"&&(
+        <div style={{background:t.bgCard2,borderRadius:12,padding:"14px",border:`1px solid ${t.border}`,marginBottom:8}}>
+          <div style={{fontSize:12,color:t.textMuted,marginBottom:14,lineHeight:1.5}}>
+            {tr("Have feedback, found a bug, or have a feature suggestion? Reach out — I genuinely read every message.",settings.uiLanguage)}
+          </div>
+
+          {/* Telegram contact */}
+          <a
+            href="https://t.me/bex_man"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{display:"flex",alignItems:"center",gap:12,padding:"12px",background:t.bgCard,borderRadius:10,border:`1px solid ${t.border}`,textDecoration:"none",color:t.text,marginBottom:8}}>
+            <div style={{width:40,height:40,borderRadius:"50%",background:"#229ED9",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+              <i className="ti ti-brand-telegram" style={{fontSize:20,color:"#fff"}} aria-hidden="true"/>
+            </div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:11,color:t.textMuted,textTransform:"uppercase",letterSpacing:"0.4px",fontWeight:600}}>{tr("Telegram",settings.uiLanguage)}</div>
+              <div style={{fontSize:14,color:t.text,fontWeight:600,marginTop:2}}>@bex_man</div>
+            </div>
+            <i className="ti ti-arrow-up-right" style={{fontSize:16,color:t.textMuted}} aria-hidden="true"/>
+          </a>
+
+          {/* Email contact */}
+          <a
+            href="mailto:bex.manapov@gmail.com"
+            style={{display:"flex",alignItems:"center",gap:12,padding:"12px",background:t.bgCard,borderRadius:10,border:`1px solid ${t.border}`,textDecoration:"none",color:t.text}}>
+            <div style={{width:40,height:40,borderRadius:"50%",background:"#ea4335",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+              <i className="ti ti-mail" style={{fontSize:20,color:"#fff"}} aria-hidden="true"/>
+            </div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:11,color:t.textMuted,textTransform:"uppercase",letterSpacing:"0.4px",fontWeight:600}}>{tr("Email",settings.uiLanguage)}</div>
+              <div style={{fontSize:13,color:t.text,fontWeight:600,marginTop:2,wordBreak:"break-all"}}>bex.manapov@gmail.com</div>
+            </div>
+            <i className="ti ti-arrow-up-right" style={{fontSize:16,color:t.textMuted}} aria-hidden="true"/>
+          </a>
+        </div>
+      )}
 
       {/* Danger Zone — wipes everything and starts fresh */}
       <div style={{marginTop:24,padding:"16px",background:t.bgCard,borderRadius:12,border:`1px solid ${t.border}`}}>
@@ -3414,7 +3660,7 @@ function App(){
   return(
     <div style={{height:"100vh",display:"flex",flexDirection:"column",background:t.bg,maxWidth:430,margin:"0 auto",position:"relative",overflow:"hidden"}}>
       <div style={{flex:1,overflow:"hidden",position:"relative"}} className="fade-in">
-        {tab==="home"&&<HomeScreen accounts={accounts} transactions={transactions} categories={categories} fixedExpenses={fixedExpenses} goals={goals} settings={settings} onSettingsChange={setSettings} onAddTxn={(mode)=>{setAddMode(mode);setAddModal(true);}} onGoalsChange={setGoals} t={t} onTxnClick={setSelTxn}/>}
+        {tab==="home"&&<HomeScreen accounts={accounts} transactions={transactions} categories={categories} fixedExpenses={fixedExpenses} goals={goals} settings={settings} onSettingsChange={setSettings} onAddTxn={(mode)=>{setAddMode(mode);setAddModal(true);}} onGoalsChange={setGoals} onTabChange={setTab} t={t} onTxnClick={setSelTxn}/>}
         {tab==="analytics"&&<AnalyticsScreen transactions={transactions} categories={categories} settings={settings} t={t}/>}
         {tab==="history"&&<HistoryScreen transactions={transactions} accounts={accounts} categories={categories} settings={settings} onTxnClick={setSelTxn} t={t}/>}
         {tab==="settings"&&<SettingsScreen accounts={accounts} categories={categories} fixedExpenses={fixedExpenses} goals={goals} settings={settings} onSettingsChange={setSettings} onAccountsChange={setAccounts} onCategoriesChange={setCategories} onFixedChange={setFixed} onGoalsChange={setGoals} onReset={handleReset} onRefreshRates={handleRefreshRates} onExport={handleExportCSV} t={t}/>}
