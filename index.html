@@ -669,6 +669,10 @@ const TRANSLATIONS={
     "Auto (System)":"Авто (система)",
     // Goals
     "Savings Goals":"Цели накопления","Remaining":"Осталось","equivalent of":"равно",
+    "My Progress":"Мой прогресс","Weeks":"Недели","Months":"Месяцы","weeks":"нед.","months":"мес.",
+    "By category":"По категориям","Saved":"Сэкономлено","Uncategorized":"Без категории",
+    "Not enough data yet for this period range. Log some transactions and check back later!":"Пока недостаточно данных для этого диапазона. Запишите немного транзакций и зайдите позже!",
+    "Saved = income − expenses for the period. Amounts converted to your selected currency at today's exchange rates.":"Сэкономлено = доходы − расходы за период. Суммы конвертированы в выбранную валюту по сегодняшнему курсу.",
     "days left":"дн. осталось","Due today":"Срок сегодня","days overdue":"дн. просрочено",
     "Goal achieved!":"Цель достигнута!",
     "coffee orders":"чашек кофе","pizzas":"пицц","burgers":"бургеров","sushi sets":"сетов суши",
@@ -716,6 +720,10 @@ const TRANSLATIONS={
     "App Language":"Қолданба тілі","AI Language":"ЖИ тілі",
     "Auto (System)":"Авто (жүйе)",
     "Savings Goals":"Жинақтау мақсаттары","Remaining":"Қалды","equivalent of":"тең",
+    "My Progress":"Менің прогресс","Weeks":"Апталар","Months":"Айлар","weeks":"апта","months":"ай",
+    "By category":"Санат бойынша","Saved":"Үнемделді","Uncategorized":"Санатсыз",
+    "Not enough data yet for this period range. Log some transactions and check back later!":"Бұл кезең үшін деректер әлі жеткіліксіз. Бірнеше транзакция жазыңыз және кейінірек тексеріңіз!",
+    "Saved = income − expenses for the period. Amounts converted to your selected currency at today's exchange rates.":"Үнемделді = кезеңдегі кірістер − шығыстар. Сомалар бүгінгі бағам бойынша таңдалған валютаға айырбасталған.",
     "days left":"күн қалды","Due today":"Бүгін мерзімі","days overdue":"күн кешіктірілді",
     "Goal achieved!":"Мақсат орындалды!",
     "coffee orders":"кофе","pizzas":"пицца","burgers":"бургер","sushi sets":"суши",
@@ -1435,6 +1443,11 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,goals,settin
 function AnalyticsScreen({transactions,categories,settings,t}){
   const now=new Date();
   const{selectedCurrency,exchangeRates}=settings;
+  // Sub-tab state: "overview" (current pie + calendar) or "progress" (period comparison)
+  const[subTab,setSubTab]=useState("overview");
+  // My Progress controls: mode (weeks/months) and how many periods to compare
+  const[periodMode,setPeriodMode]=useState("months");
+  const[periodCount,setPeriodCount]=useState(3);
 
   // ─ Pie chart filter: independent date range ─
   // Default: this month so first-time users see something useful immediately.
@@ -1521,9 +1534,128 @@ function AnalyticsScreen({transactions,categories,settings,t}){
     {k:"thisYear",l:"Year"}
   ];
 
+  // ─ MY PROGRESS: build the period comparison data ─
+  // For each selected period (most recent on the right), compute:
+  //   - income / expense / saved totals (KZT, then converted to display currency)
+  //   - per-category expense breakdown (top 5 + Other)
+  // Periods are aligned to calendar weeks (Mon–Sun) or calendar months for clarity.
+  const periods = useMemo(()=>{
+    const list = [];
+    const today = new Date();
+    if(periodMode === "months"){
+      // Generate the last N calendar months, oldest first
+      for(let i = periodCount - 1; i >= 0; i--){
+        const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+        const start = new Date(d.getFullYear(), d.getMonth(), 1);
+        const end = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59);
+        const label = d.toLocaleDateString("en-US", {month:"short", year: i === 0 ? undefined : "2-digit"});
+        list.push({start, end, label});
+      }
+    } else {
+      // Weeks: ISO weeks starting Monday. Most recent is the current (partial) week.
+      // Find this week's Monday
+      const day = today.getDay() || 7; // Sunday → 7
+      const thisMon = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (day - 1));
+      for(let i = periodCount - 1; i >= 0; i--){
+        const start = new Date(thisMon.getFullYear(), thisMon.getMonth(), thisMon.getDate() - i*7);
+        const end   = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6, 23, 59, 59);
+        const label = i === 0 ? "This wk" : i === 1 ? "Last wk" : `${start.toLocaleDateString("en-US",{month:"short",day:"numeric"})}`;
+        list.push({start, end, label});
+      }
+    }
+    return list;
+  }, [periodMode, periodCount]);
+
+  // Compute totals + category breakdown per period
+  const periodStats = useMemo(()=>{
+    return periods.map(p=>{
+      const startMs = p.start.getTime();
+      const endMs = p.end.getTime();
+      let incomeKzt = 0, expenseKzt = 0;
+      const categoryKzt = {}; // categoryId → kzt expense
+      transactions.forEach(tx=>{
+        const txMs = new Date(tx.date).getTime();
+        if(txMs < startMs || txMs > endMs) return;
+        const kzt = toKZT(tx.amount, tx.currency, exchangeRates);
+        if(tx.type === "income") incomeKzt += kzt;
+        else if(tx.type === "expense"){
+          expenseKzt += kzt;
+          const cid = tx.categoryId || "uncategorized";
+          categoryKzt[cid] = (categoryKzt[cid] || 0) + kzt;
+        }
+        // transfers don't count toward income/expense in this view
+      });
+      return {
+        ...p,
+        incomeKzt, expenseKzt,
+        savedKzt: incomeKzt - expenseKzt,
+        categoryKzt
+      };
+    });
+  }, [periods, transactions, exchangeRates]);
+
+  // Find top 5 expense categories across all periods (by total spend)
+  const topCategories = useMemo(()=>{
+    const total = {};
+    periodStats.forEach(p=>{
+      Object.entries(p.categoryKzt).forEach(([cid, kzt])=>{
+        total[cid] = (total[cid] || 0) + kzt;
+      });
+    });
+    return Object.entries(total)
+      .sort((a,b)=>b[1]-a[1])
+      .slice(0, 5)
+      .map(([cid])=>{
+        const cat = categories.find(c=>c.id===cid);
+        return { id: cid, name: cat?.name || tr("Uncategorized", settings.uiLanguage), icon: cat?.icon || "📂" };
+      });
+  }, [periodStats, categories, settings.uiLanguage]);
+
+  // Helper: percentage change from first to last period
+  const pctChange = (first, last) => {
+    if(!first || first === 0) return last > 0 ? 100 : 0;
+    return Math.round(((last - first) / Math.abs(first)) * 100);
+  };
+
   return(
     <div style={{height:"100%",overflow:"auto",padding:"calc(env(safe-area-inset-top, 20px) + 40px) 16px 16px"}}>
       <div style={{fontFamily:"system-ui,sans-serif",fontSize:22,fontWeight:700,color:t.text,marginBottom:16}}>{tr("Analytics",settings.uiLanguage)}</div>
+
+      {/* ─────── Sub-tab switcher: Overview | My Progress ─────── */}
+      <div style={{display:"flex",gap:0,marginBottom:16,background:t.bgCard2,borderRadius:10,padding:4,border:`1px solid ${t.border}`}}>
+        {[{k:"overview",l:tr("Overview",settings.uiLanguage)},{k:"progress",l:tr("My Progress",settings.uiLanguage)}].map(tab=>(
+          <button key={tab.k}
+            onClick={()=>setSubTab(tab.k)}
+            style={{
+              flex:1,
+              background: subTab===tab.k ? t.bgCard : "transparent",
+              color: subTab===tab.k ? t.text : t.textMuted,
+              border:"none",
+              borderRadius:7,
+              padding:"8px 12px",
+              fontSize:13,
+              fontWeight:600,
+              cursor:"pointer",
+              fontFamily:"system-ui,sans-serif",
+              transition:"all 0.2s ease",
+              boxShadow: subTab===tab.k ? "0 1px 3px rgba(0,0,0,0.15)" : "none"
+            }}>
+            {tab.l}
+          </button>
+        ))}
+      </div>
+
+      {/* ─────── Sliding panel container: Overview | My Progress ─────── */}
+      {/* The wrapper has overflow:hidden, the inner flex container is 200% wide and translates left/right */}
+      <div style={{overflow:"hidden",position:"relative"}}>
+        <div style={{
+          display:"flex",
+          width:"200%",
+          transform: subTab==="overview" ? "translateX(0)" : "translateX(-50%)",
+          transition:"transform 0.32s cubic-bezier(0.4, 0.0, 0.2, 1)"
+        }}>
+          {/* ─── Pane 1: Overview (existing content) ─── */}
+          <div style={{width:"50%",flexShrink:0,paddingRight:8}}>
 
       {/* ─────── Pie Chart card with own date range ─────── */}
       <div style={{background:t.bgCard,borderRadius:16,padding:"16px",border:`1px solid ${t.border}`,marginBottom:16}}>
@@ -1631,6 +1763,173 @@ function AnalyticsScreen({transactions,categories,settings,t}){
           })}
         </div>
       </div>
+
+          </div>
+          {/* ─── Pane 2: My Progress ─── */}
+          <div style={{width:"50%",flexShrink:0,paddingLeft:8}}>
+
+            {/* Period mode toggle: Weeks | Months */}
+            <div style={{display:"flex",gap:6,marginBottom:10}}>
+              {[{k:"weeks",l:tr("Weeks",settings.uiLanguage)},{k:"months",l:tr("Months",settings.uiLanguage)}].map(m=>(
+                <button key={m.k}
+                  onClick={()=>setPeriodMode(m.k)}
+                  style={{
+                    flex:1,background:periodMode===m.k?"#10b981":t.bgCard2,
+                    color:periodMode===m.k?"#fff":t.text,
+                    border:`1px solid ${periodMode===m.k?"#10b981":t.border}`,
+                    borderRadius:8,padding:"8px",fontSize:13,fontWeight:600,
+                    cursor:"pointer",fontFamily:"system-ui,sans-serif"
+                  }}>
+                  {m.l}
+                </button>
+              ))}
+            </div>
+
+            {/* Period count chips */}
+            <div style={{display:"flex",gap:6,marginBottom:14}}>
+              {[2,3,6].map(n=>(
+                <button key={n}
+                  onClick={()=>setPeriodCount(n)}
+                  style={{
+                    flex:1,background:periodCount===n?t.bgCard:t.bgCard2,
+                    color:periodCount===n?t.text:t.textMuted,
+                    border:`1px solid ${periodCount===n?t.text:t.border}`,
+                    borderRadius:8,padding:"6px",fontSize:12,fontWeight:600,
+                    cursor:"pointer",fontFamily:"system-ui,sans-serif"
+                  }}>
+                  {n} {periodMode==="weeks"?tr("weeks",settings.uiLanguage):tr("months",settings.uiLanguage)}
+                </button>
+              ))}
+            </div>
+
+            {/* Empty state if not enough data */}
+            {periodStats.every(p=>p.incomeKzt===0 && p.expenseKzt===0) && (
+              <div style={{background:t.bgCard,borderRadius:14,padding:"32px 16px",textAlign:"center",border:`1px solid ${t.border}`}}>
+                <div style={{fontSize:36,marginBottom:8}}>📊</div>
+                <div style={{fontSize:14,color:t.textMuted,lineHeight:1.5}}>
+                  {tr("Not enough data yet for this period range. Log some transactions and check back later!",settings.uiLanguage)}
+                </div>
+              </div>
+            )}
+
+            {/* Summary cards: Income, Expenses, Saved — only show if there's data */}
+            {!periodStats.every(p=>p.incomeKzt===0 && p.expenseKzt===0) && (
+              <>
+                {[
+                  {key:"income", label:tr("Income",settings.uiLanguage), color:"#10b981", icon:"💰", getValue:(p)=>p.incomeKzt, higherIsBetter:true},
+                  {key:"expense", label:tr("Expenses",settings.uiLanguage), color:"#ef4444", icon:"💸", getValue:(p)=>p.expenseKzt, higherIsBetter:false},
+                  {key:"saved", label:tr("Saved",settings.uiLanguage), color:"#3b82f6", icon:"💵", getValue:(p)=>p.savedKzt, higherIsBetter:true}
+                ].map(metric=>{
+                  const values = periodStats.map(p=>metric.getValue(p));
+                  const maxAbs = Math.max(1, ...values.map(Math.abs));
+                  const change = pctChange(values[0], values[values.length-1]);
+                  // Color the % change green if it moved in the "good" direction for this metric
+                  const changeColor = (change > 0) === metric.higherIsBetter ? "#10b981" : (change === 0 ? t.textMuted : "#ef4444");
+                  const changeArrow = change > 0 ? "↑" : change < 0 ? "↓" : "→";
+                  return(
+                    <div key={metric.key} style={{background:t.bgCard,borderRadius:14,padding:"14px",border:`1px solid ${t.border}`,marginBottom:12}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+                        <div style={{fontSize:13,color:t.text,fontWeight:600,display:"flex",alignItems:"center",gap:6}}>
+                          <span>{metric.icon}</span>{metric.label}
+                        </div>
+                        {periodStats.length > 1 && (
+                          <div style={{fontSize:12,fontWeight:700,color:changeColor,fontFamily:"monospace"}}>
+                            {changeArrow} {Math.abs(change)}%
+                          </div>
+                        )}
+                      </div>
+                      {/* Bars row: one column per period */}
+                      <div style={{display:"flex",gap:6,alignItems:"flex-end",height:80,marginBottom:8}}>
+                        {periodStats.map((p,i)=>{
+                          const v = metric.getValue(p);
+                          const heightPct = (Math.abs(v) / maxAbs) * 100;
+                          const isNegative = v < 0;
+                          const barColor = metric.key === "saved" && isNegative ? "#ef4444" : metric.color;
+                          return(
+                            <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-end",height:"100%"}}>
+                              <div style={{width:"100%",height:`${Math.max(2,heightPct)}%`,background:barColor,borderRadius:"4px 4px 0 0",opacity:i===periodStats.length-1?1:0.55}}/>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {/* Labels row */}
+                      <div style={{display:"flex",gap:6,marginBottom:4}}>
+                        {periodStats.map((p,i)=>(
+                          <div key={i} style={{flex:1,fontSize:9,color:t.textMuted,textAlign:"center",fontFamily:"system-ui,sans-serif"}}>{p.label}</div>
+                        ))}
+                      </div>
+                      {/* Values row */}
+                      <div style={{display:"flex",gap:6}}>
+                        {periodStats.map((p,i)=>{
+                          const display = fromKZT(metric.getValue(p), selectedCurrency, exchangeRates);
+                          return(
+                            <div key={i} style={{flex:1,fontSize:11,color:t.text,textAlign:"center",fontFamily:"monospace",fontWeight:i===periodStats.length-1?700:400}}>
+                              {fmtCompact(display)}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* Per-category breakdown */}
+                {topCategories.length > 0 && (
+                  <div style={{background:t.bgCard,borderRadius:14,padding:"14px",border:`1px solid ${t.border}`,marginBottom:12}}>
+                    <div style={{fontSize:13,fontWeight:600,color:t.text,marginBottom:12,display:"flex",alignItems:"center",gap:6}}>
+                      📂 {tr("By category",settings.uiLanguage)}
+                    </div>
+                    {topCategories.map(cat=>{
+                      const values = periodStats.map(p=>p.categoryKzt[cat.id] || 0);
+                      const maxAbs = Math.max(1, ...values);
+                      const change = pctChange(values[0], values[values.length-1]);
+                      // For categories, "higher is bad" since it's expense
+                      const changeColor = change > 0 ? "#ef4444" : change < 0 ? "#10b981" : t.textMuted;
+                      const changeArrow = change > 0 ? "↑" : change < 0 ? "↓" : "→";
+                      return(
+                        <div key={cat.id} style={{marginBottom:14,paddingBottom:10,borderBottom:`1px solid ${t.border}`}}>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                            <div style={{fontSize:13,color:t.text,display:"flex",alignItems:"center",gap:6}}>
+                              <span>{cat.icon}</span><span>{cat.name}</span>
+                            </div>
+                            {periodStats.length > 1 && (
+                              <div style={{fontSize:11,fontWeight:700,color:changeColor,fontFamily:"monospace"}}>
+                                {changeArrow} {Math.abs(change)}%
+                              </div>
+                            )}
+                          </div>
+                          {/* Horizontal bars per period */}
+                          {periodStats.map((p,i)=>{
+                            const v = p.categoryKzt[cat.id] || 0;
+                            const widthPct = (v / maxAbs) * 100;
+                            const display = fromKZT(v, selectedCurrency, exchangeRates);
+                            return(
+                              <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:3,fontSize:10}}>
+                                <div style={{width:46,color:t.textMuted,fontFamily:"system-ui,sans-serif",fontSize:9,flexShrink:0}}>{p.label}</div>
+                                <div style={{flex:1,height:14,background:t.bgInput,borderRadius:3,position:"relative",overflow:"hidden"}}>
+                                  <div style={{position:"absolute",left:0,top:0,bottom:0,width:`${Math.max(2,widthPct)}%`,background:"#ef4444",opacity:i===periodStats.length-1?0.9:0.55,borderRadius:3,transition:"width 0.3s ease"}}/>
+                                </div>
+                                <div style={{width:55,textAlign:"right",fontFamily:"monospace",color:t.text,fontSize:10,fontWeight:i===periodStats.length-1?700:400}}>{fmtCompact(display)}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Honest disclaimer */}
+                <div style={{fontSize:10,color:t.textMuted,fontStyle:"italic",lineHeight:1.5,padding:"4px 8px"}}>
+                  💡 {tr("Saved = income − expenses for the period. Amounts converted to your selected currency at today's exchange rates.",settings.uiLanguage)}
+                </div>
+              </>
+            )}
+
+          </div>
+        </div>
+      </div>
+
     </div>
   );
 }
