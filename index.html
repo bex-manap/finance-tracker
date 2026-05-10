@@ -684,6 +684,13 @@ const TRANSLATIONS={
     "Auto (System)":"Авто (система)",
     // Goals
     "Savings Goals":"Цели накопления","Remaining":"Осталось","equivalent of":"равно",
+    "Contribute":"Пополнить","Contribute to":"Пополнить","Amount":"Сумма",
+    "From account (optional)":"Со счёта (необязательно)","No account selected":"Счёт не выбран",
+    "Note (optional)":"Заметка (необязательно)","e.g., From May salary":"напр. С майской зарплаты",
+    "Add Contribution":"Добавить пополнение","Full remaining":"Всё остальное",
+    "This is a virtual reservation — your account balances stay the same. It only tracks your intent to save toward this goal.":"Это виртуальная резервация — балансы счетов не меняются. Она только отражает ваше намерение накопить.",
+    "entry":"запись","entries":"записей","Delete this contribution?":"Удалить пополнение?",
+    "No contributions yet. Tap the goal on Home to contribute.":"Пока нет пополнений. Нажмите на цель на главной, чтобы пополнить.",
     "My Progress":"Мой прогресс","Weeks":"Недели","Months":"Месяцы","weeks":"нед.","months":"мес.",
     "By category":"По категориям","Saved":"Сэкономлено","Uncategorized":"Без категории",
     "Not enough data yet for this period range. Log some transactions and check back later!":"Пока недостаточно данных для этого диапазона. Запишите немного транзакций и зайдите позже!",
@@ -737,6 +744,13 @@ const TRANSLATIONS={
     "App Language":"Қолданба тілі","AI Language":"ЖИ тілі",
     "Auto (System)":"Авто (жүйе)",
     "Savings Goals":"Жинақтау мақсаттары","Remaining":"Қалды","equivalent of":"тең",
+    "Contribute":"Толықтыру","Contribute to":"Толықтыру","Amount":"Сома",
+    "From account (optional)":"Шоттан (қаласаңыз)","No account selected":"Шот таңдалмаған",
+    "Note (optional)":"Ескертпе (қаласаңыз)","e.g., From May salary":"мыс. Мамыр айлығынан",
+    "Add Contribution":"Толықтыруды қосу","Full remaining":"Қалғанының бәрі",
+    "This is a virtual reservation — your account balances stay the same. It only tracks your intent to save toward this goal.":"Бұл виртуалды резерв — шот баланстары өзгермейді. Тек қана сіздің жинақтау ниетіңізді есепке алады.",
+    "entry":"жазба","entries":"жазба","Delete this contribution?":"Бұл толықтыруды жою керек пе?",
+    "No contributions yet. Tap the goal on Home to contribute.":"Әзірше толықтырулар жоқ. Толықтыру үшін басты беттегі мақсатқа басыңыз.",
     "My Progress":"Менің прогресс","Weeks":"Апталар","Months":"Айлар","weeks":"апта","months":"ай",
     "By category":"Санат бойынша","Saved":"Үнемделді","Uncategorized":"Санатсыз",
     "Not enough data yet for this period range. Log some transactions and check back later!":"Бұл кезең үшін деректер әлі жеткіліксіз. Бірнеше транзакция жазыңыз және кейінірек тексеріңіз!",
@@ -1187,23 +1201,37 @@ function TxnDetail({txn,open,onClose,accounts,categories,onDelete,settings,t}){
 // ── GOALS CARD (HOME SCREEN) ──
 // Compact horizontal scroll showing each goal's progress with bar + comparison.
 // Tap a goal to expand and see what the remaining amount could buy.
-function GoalsCard({goals,transactions,settings,t}){
+function GoalsCard({goals,accounts,settings,onGoalsChange,t}){
   const[expandedId,setExpandedId]=useState(null);
+  const[contributingGoal,setContributingGoal]=useState(null); // null or the goal object
   if(!goals||goals.length===0)return null;
   const{selectedCurrency,exchangeRates,uiLanguage}=settings;
   const lang=uiLanguage||"English";
 
-  // For each goal: compute saved amount = sum(income) - sum(expense) since the goal's createdAt date.
-  // This means "savings achieved while pursuing this goal" rather than total balance.
+  // Saved amount = sum of all contributions to this goal (manual, user-initiated).
+  // Contributions are virtual reservations — they don't move real money between accounts,
+  // they're just intentional "I'm setting aside X for this goal" entries.
   const computeSaved=(goal)=>{
-    const since=new Date(goal.createdAt).getTime();
-    let net=0;
-    transactions.forEach(tx=>{
-      if(new Date(tx.date).getTime()<since)return;
-      if(tx.type==="income")net+=toKZT(tx.amount,tx.currency,exchangeRates);
-      else if(tx.type==="expense")net-=toKZT(tx.amount,tx.currency,exchangeRates);
-    });
-    return Math.max(0,net);
+    return (goal.contributions||[]).reduce((sum,c)=>sum+(c.kzt||0),0);
+  };
+
+  // Add a contribution to a goal (called from the modal)
+  const handleAddContribution=(goal,amount,accountId,note)=>{
+    const kzt=toKZT(amount,selectedCurrency,exchangeRates); // amount entered in the user's display currency
+    const contribution={
+      id:uid(),
+      amount, // in selectedCurrency at time of contribution
+      currency:selectedCurrency,
+      kzt,
+      accountId:accountId||null,
+      note:note||"",
+      date:new Date().toISOString()
+    };
+    onGoalsChange(goals.map(g=>
+      g.id===goal.id
+        ? {...g,contributions:[...(g.contributions||[]),contribution]}
+        : g
+    ));
   };
 
   return(
@@ -1246,13 +1274,13 @@ function GoalsCard({goals,transactions,settings,t}){
               <div style={{height:8,background:t.bgInput,borderRadius:4,overflow:"hidden"}}>
                 <div style={{height:"100%",width:`${pct}%`,background:isComplete?"linear-gradient(90deg,#10b981,#34d399)":"linear-gradient(90deg,#3b82f6,#10b981)",borderRadius:4,transition:"width .4s ease"}}/>
               </div>
-              {/* Expanded view: comparison breakdown */}
+              {/* Expanded view: comparison breakdown + contribute button */}
               {isExpanded&&!isComplete&&(
                 <div className="fade-in" style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${t.border}`}}>
                   <div style={{fontSize:11,color:t.textMuted,marginBottom:8,fontStyle:"italic"}}>
                     {tr("Remaining",lang)}: {fmtAmt(fromKZT(remainingKzt,selectedCurrency,exchangeRates),selectedCurrency)} = {tr("equivalent of",lang)}
                   </div>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:12}}>
                     {COMPARISON_ITEMS
                       .map(item=>({...item,count:Math.floor(remainingKzt/item.kzt)}))
                       .filter(item=>item.count>=1&&item.count<=10000)
@@ -1265,6 +1293,28 @@ function GoalsCard({goals,transactions,settings,t}){
                         </div>
                       ))}
                   </div>
+                  {/* Contribute button — opens modal where user picks an amount to allocate to this goal */}
+                  <button
+                    onClick={(e)=>{e.stopPropagation();setContributingGoal(goal);}}
+                    style={{
+                      width:"100%",
+                      background:"#10b981",
+                      border:"none",
+                      borderRadius:10,
+                      padding:"10px",
+                      color:"#fff",
+                      fontSize:13,
+                      fontWeight:600,
+                      cursor:"pointer",
+                      fontFamily:"system-ui,sans-serif",
+                      display:"flex",
+                      alignItems:"center",
+                      justifyContent:"center",
+                      gap:6
+                    }}>
+                    <i className="ti ti-plus" style={{fontSize:14}} aria-hidden="true"/>
+                    {tr("Contribute",lang)}
+                  </button>
                 </div>
               )}
               {isExpanded&&isComplete&&(
@@ -1275,6 +1325,142 @@ function GoalsCard({goals,transactions,settings,t}){
             </div>
           );
         })}
+      </div>
+      {/* Contribute modal — opens when user taps the Contribute button on any goal */}
+      {contributingGoal&&(
+        <ContributeModal
+          goal={contributingGoal}
+          accounts={accounts}
+          settings={settings}
+          t={t}
+          onClose={()=>setContributingGoal(null)}
+          onSave={(amount,accountId,note)=>{
+            handleAddContribution(contributingGoal,amount,accountId,note);
+            setContributingGoal(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── CONTRIBUTE MODAL ──
+// Lets the user allocate a specific amount toward a goal as a virtual reservation.
+// No real money moves between accounts — this is just intent tracking.
+// Optional account selector + note for context.
+function ContributeModal({goal,accounts,settings,t,onClose,onSave}){
+  const[amount,setAmount]=useState("");
+  const[accountId,setAccountId]=useState("");
+  const[note,setNote]=useState("");
+  const lang=settings.uiLanguage||"English";
+  const{selectedCurrency,exchangeRates}=settings;
+
+  const remainingKzt=Math.max(0,goal.targetKzt-(goal.contributions||[]).reduce((s,c)=>s+(c.kzt||0),0));
+  const remainingDisplay=fromKZT(remainingKzt,selectedCurrency,exchangeRates);
+
+  const handleSave=()=>{
+    const v=parseFloat(amount);
+    if(!v||v<=0)return;
+    onSave(v,accountId||null,note.trim());
+  };
+
+  return(
+    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:t.bg,borderRadius:"24px 24px 0 0",padding:"20px 16px calc(20px + env(safe-area-inset-bottom, 0px))",width:"100%",maxWidth:430,maxHeight:"90vh",overflow:"auto"}}>
+        <div style={{width:36,height:4,background:t.border,borderRadius:2,margin:"0 auto 16px"}}/>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
+          <div style={{fontSize:28}}>{goal.emoji||"🎯"}</div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:11,color:t.textMuted,textTransform:"uppercase",letterSpacing:"0.5px"}}>{tr("Contribute to",lang)}</div>
+            <div style={{fontSize:18,fontWeight:600,color:t.text}}>{goal.name}</div>
+          </div>
+          <button onClick={onClose} style={{background:t.bgCard2,border:"none",borderRadius:"50%",width:32,height:32,color:t.textMuted,fontSize:18,cursor:"pointer"}}>×</button>
+        </div>
+        <div style={{fontSize:11,color:t.textMuted,marginBottom:18}}>
+          {tr("Remaining",lang)}: <span style={{fontFamily:"monospace",color:t.text}}>{fmtAmt(remainingDisplay,selectedCurrency)}</span>
+        </div>
+
+        {/* Amount input */}
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:12,color:t.textMuted,marginBottom:6,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.4px"}}>{tr("Amount",lang)} ({selectedCurrency})</div>
+          <input
+            type="number"
+            value={amount}
+            onChange={e=>setAmount(e.target.value)}
+            placeholder="0"
+            inputMode="decimal"
+            autoFocus
+            style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"14px",fontSize:22,fontFamily:"monospace",fontWeight:600,boxSizing:"border-box"}}
+          />
+          {/* Quick-fill chips for common amounts (10K, 25K, 50K, 100K) */}
+          <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>
+            {[10000,25000,50000,100000].map(v=>{
+              const display=fromKZT(v,selectedCurrency,exchangeRates);
+              return(
+                <button key={v} onClick={()=>setAmount(String(Math.round(display)))}
+                  style={{background:t.bgCard2,border:`1px solid ${t.border}`,borderRadius:8,padding:"6px 10px",color:t.text,fontSize:11,cursor:"pointer",fontFamily:"monospace"}}>
+                  +{fmtCompact(display)}
+                </button>
+              );
+            })}
+            {remainingKzt>0&&(
+              <button onClick={()=>setAmount(String(Math.round(remainingDisplay)))}
+                style={{background:"#10b98122",border:`1px solid #10b98155`,borderRadius:8,padding:"6px 10px",color:"#10b981",fontSize:11,cursor:"pointer",fontFamily:"monospace",fontWeight:600}}>
+                {tr("Full remaining",lang)}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Optional source account picker */}
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:12,color:t.textMuted,marginBottom:6,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.4px"}}>{tr("From account (optional)",lang)}</div>
+          <select
+            value={accountId}
+            onChange={e=>setAccountId(e.target.value)}
+            style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"12px",fontSize:14,fontFamily:"system-ui,sans-serif",cursor:"pointer",boxSizing:"border-box"}}>
+            <option value="">{tr("No account selected",lang)}</option>
+            {accounts.filter(a=>a.isActive!==false).map(a=>(
+              <option key={a.id} value={a.id}>{a.icon} {a.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Optional note */}
+        <div style={{marginBottom:18}}>
+          <div style={{fontSize:12,color:t.textMuted,marginBottom:6,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.4px"}}>{tr("Note (optional)",lang)}</div>
+          <input
+            type="text"
+            value={note}
+            onChange={e=>setNote(e.target.value)}
+            placeholder={tr("e.g., From May salary",lang)}
+            maxLength={80}
+            style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"12px",fontSize:14,boxSizing:"border-box",fontFamily:"system-ui,sans-serif"}}
+          />
+        </div>
+
+        {/* Honest note: this is a virtual reservation, doesn't move money */}
+        <div style={{fontSize:10,color:t.textMuted,marginBottom:14,fontStyle:"italic",lineHeight:1.5}}>
+          💡 {tr("This is a virtual reservation — your account balances stay the same. It only tracks your intent to save toward this goal.",lang)}
+        </div>
+
+        <button
+          onClick={handleSave}
+          disabled={!amount||parseFloat(amount)<=0}
+          style={{
+            width:"100%",
+            background:(!amount||parseFloat(amount)<=0)?t.bgCard2:"#10b981",
+            color:(!amount||parseFloat(amount)<=0)?t.textMuted:"#fff",
+            border:"none",
+            borderRadius:12,
+            padding:"14px",
+            fontSize:15,
+            fontWeight:600,
+            cursor:(!amount||parseFloat(amount)<=0)?"not-allowed":"pointer",
+            fontFamily:"system-ui,sans-serif"
+          }}>
+          {tr("Add Contribution",lang)}
+        </button>
       </div>
     </div>
   );
@@ -1291,7 +1477,7 @@ const getGreetingKey=()=>{
   return "Good night";
 };
 
-function HomeScreen({accounts,transactions,categories,fixedExpenses,goals,settings,onSettingsChange,onAddTxn,t,onTxnClick}){
+function HomeScreen({accounts,transactions,categories,fixedExpenses,goals,settings,onSettingsChange,onAddTxn,onGoalsChange,t,onTxnClick}){
   const{selectedCurrency,balanceHidden,exchangeRates}=settings;
   // Pick today's quote from the user's UI language. Use the same daily index across
   // all languages so the same wisdom appears in different languages on the same day.
@@ -1345,7 +1531,9 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,goals,settin
     <div style={{height:"100%",overflow:"auto",paddingBottom:16}}>
       {/* ─── REFINED HEADER ─── */}
       {/* No more dark gradient banner — the page background carries through. Cleaner, more spacious. */}
-      <div style={{padding:"calc(env(safe-area-inset-top, 20px) + 32px) 16px 0"}}>
+      {/* Top padding accounts for: iOS safe area (notch/Dynamic Island) + Telegram's Close button bar (~52px on iOS).
+          The 56px buffer leaves comfortable breathing room below the Telegram chrome regardless of device. */}
+      <div style={{padding:"calc(env(safe-area-inset-top, 20px) + 56px) 16px 0"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
           <div style={{display:"flex",alignItems:"center",gap:11}}>
             {settings.profilePicture
@@ -1496,7 +1684,7 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,goals,settin
         )}
 
         {/* Goals — savings progress with comparisons */}
-        <GoalsCard goals={goals} transactions={transactions} settings={settings} t={t}/>
+        <GoalsCard goals={goals} accounts={accounts} settings={settings} onGoalsChange={onGoalsChange} t={t}/>
 
         {/* Recent Transactions — last 10, grouped by date for easier scanning */}
         <div style={{marginBottom:8}}>
@@ -1754,7 +1942,7 @@ function AnalyticsScreen({transactions,categories,settings,t}){
   };
 
   return(
-    <div style={{height:"100%",overflow:"auto",padding:"calc(env(safe-area-inset-top, 20px) + 40px) 16px 16px"}}>
+    <div style={{height:"100%",overflow:"auto",padding:"calc(env(safe-area-inset-top, 20px) + 48px) 16px 16px"}}>
       <div style={{fontFamily:"system-ui,sans-serif",fontSize:22,fontWeight:700,color:t.text,marginBottom:16}}>{tr("Analytics",settings.uiLanguage)}</div>
 
       {/* ─────── Sub-tab switcher: Overview | My Progress ─────── */}
@@ -2093,7 +2281,7 @@ function HistoryScreen({transactions,accounts,categories,settings,onTxnClick,t})
   },[monthTxns,exchangeRates]);
 
   return(
-    <div style={{height:"100%",overflow:"auto",padding:"calc(env(safe-area-inset-top, 20px) + 40px) 16px 16px"}}>
+    <div style={{height:"100%",overflow:"auto",padding:"calc(env(safe-area-inset-top, 20px) + 48px) 16px 16px"}}>
       <div style={{fontFamily:"system-ui,sans-serif",fontSize:22,fontWeight:700,color:t.text,marginBottom:16}}>{tr("History",settings.uiLanguage)}</div>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,background:t.bgCard,borderRadius:12,padding:"10px 16px",border:`1px solid ${t.border}`}}>
         <button onClick={prevMonth} style={{background:"none",border:"none",color:t.accent,fontSize:22,cursor:"pointer",padding:"0 6px"}}>‹</button>
@@ -2178,6 +2366,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,settings,onSett
   const[newGoalEmoji,setNewGoalEmoji]=useState("🎯");
   const[newGoalAmount,setNewGoalAmount]=useState("");
   const[newGoalDeadline,setNewGoalDeadline]=useState("");
+  const[expandedGoalId,setExpandedGoalId]=useState(null); // which goal's contribution history is visible
   const[newFeAmt,setNewFeAmt]=useState("");
   const[newFeDay,setNewFeDay]=useState("1");
   const fileRef=useRef();
@@ -2199,7 +2388,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,settings,onSett
   );
 
   return(
-    <div style={{height:"100%",overflow:"auto",padding:"calc(env(safe-area-inset-top, 20px) + 40px) 16px 16px"}}>
+    <div style={{height:"100%",overflow:"auto",padding:"calc(env(safe-area-inset-top, 20px) + 48px) 16px 16px"}}>
       <div style={{fontFamily:"system-ui,sans-serif",fontSize:22,fontWeight:700,color:t.text,marginBottom:16}}>{tr("Settings",settings.uiLanguage)}</div>
 
       {/* Profile */}
@@ -2407,17 +2596,54 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,settings,onSett
           )}
           {(goals||[]).map(g=>{
             const targetDisplay=fromKZT(g.targetKzt,settings.selectedCurrency,settings.exchangeRates);
+            const savedKzt=(g.contributions||[]).reduce((s,c)=>s+(c.kzt||0),0);
+            const savedDisplay=fromKZT(savedKzt,settings.selectedCurrency,settings.exchangeRates);
+            const isExpanded=expandedGoalId===g.id;
+            const contributions=(g.contributions||[]).slice().sort((a,b)=>new Date(b.date)-new Date(a.date));
             return(
-              <div key={g.id} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 0",borderBottom:`1px solid ${t.border}`}}>
-                <span style={{fontSize:20}}>{g.emoji||"🎯"}</span>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:14,color:t.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{g.name}</div>
-                  <div style={{fontSize:11,color:t.textMuted,fontFamily:"monospace"}}>
-                    {fmtAmt(targetDisplay,settings.selectedCurrency)}
-                    {g.deadline&&<span> · {new Date(g.deadline).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</span>}
+              <div key={g.id} style={{borderBottom:`1px solid ${t.border}`}}>
+                <div onClick={()=>setExpandedGoalId(isExpanded?null:g.id)} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 0",cursor:"pointer"}}>
+                  <span style={{fontSize:20}}>{g.emoji||"🎯"}</span>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:14,color:t.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{g.name}</div>
+                    <div style={{fontSize:11,color:t.textMuted,fontFamily:"monospace"}}>
+                      {fmtAmt(savedDisplay,settings.selectedCurrency)} / {fmtAmt(targetDisplay,settings.selectedCurrency)}
+                      {g.deadline&&<span> · {new Date(g.deadline).toLocaleDateString("en-US",{month:"short",day:"numeric"})}</span>}
+                    </div>
                   </div>
+                  <span style={{fontSize:10,color:t.textMuted,marginRight:4}}>{contributions.length} {contributions.length===1?tr("entry",settings.uiLanguage):tr("entries",settings.uiLanguage)}</span>
+                  <button onClick={(e)=>{e.stopPropagation();if(confirm(`Delete goal "${g.name}"?`))onGoalsChange(goals.filter(x=>x.id!==g.id));}} style={{background:"#ef444422",border:"none",borderRadius:6,padding:"5px 10px",color:"#ef4444",cursor:"pointer",fontSize:12,flexShrink:0}}>✕</button>
                 </div>
-                <button onClick={()=>{if(confirm(`Delete goal "${g.name}"?`))onGoalsChange(goals.filter(x=>x.id!==g.id));}} style={{background:"#ef444422",border:"none",borderRadius:6,padding:"5px 10px",color:"#ef4444",cursor:"pointer",fontSize:12,flexShrink:0}}>✕</button>
+                {/* Expanded contribution history */}
+                {isExpanded&&(
+                  <div className="fade-in" style={{paddingBottom:10,paddingLeft:28}}>
+                    {contributions.length===0?(
+                      <div style={{fontSize:11,color:t.textMuted,fontStyle:"italic",padding:"6px 0"}}>
+                        {tr("No contributions yet. Tap the goal on Home to contribute.",settings.uiLanguage)}
+                      </div>
+                    ):contributions.map(c=>(
+                      <div key={c.id} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderTop:`1px solid ${t.border}`,fontSize:11}}>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{color:t.text,fontFamily:"monospace",fontWeight:600}}>+{fmtAmt(c.amount,c.currency)}</div>
+                          <div style={{color:t.textMuted,fontSize:10}}>
+                            {new Date(c.date).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}
+                            {c.accountId&&accounts.find(a=>a.id===c.accountId)&&` · ${accounts.find(a=>a.id===c.accountId).name}`}
+                            {c.note&&` · ${c.note}`}
+                          </div>
+                        </div>
+                        <button
+                          onClick={()=>{
+                            if(confirm(tr("Delete this contribution?",settings.uiLanguage))){
+                              onGoalsChange(goals.map(x=>x.id===g.id?{...x,contributions:x.contributions.filter(co=>co.id!==c.id)}:x));
+                            }
+                          }}
+                          style={{background:"transparent",border:"none",color:t.textMuted,cursor:"pointer",fontSize:14,padding:"4px 6px"}}>
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -2440,7 +2666,8 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,settings,onSett
                   emoji:newGoalEmoji||"🎯",
                   targetKzt:+newGoalAmount, // assumed entered in KZT
                   deadline:newGoalDeadline||null,
-                  createdAt:new Date().toISOString()
+                  createdAt:new Date().toISOString(),
+                  contributions:[] // explicit user-allocated reservations toward this goal
                 }]);
                 track("goal_create");
                 setNewGoalName("");setNewGoalEmoji("🎯");setNewGoalAmount("");setNewGoalDeadline("");
@@ -3187,7 +3414,7 @@ function App(){
   return(
     <div style={{height:"100vh",display:"flex",flexDirection:"column",background:t.bg,maxWidth:430,margin:"0 auto",position:"relative",overflow:"hidden"}}>
       <div style={{flex:1,overflow:"hidden",position:"relative"}} className="fade-in">
-        {tab==="home"&&<HomeScreen accounts={accounts} transactions={transactions} categories={categories} fixedExpenses={fixedExpenses} goals={goals} settings={settings} onSettingsChange={setSettings} onAddTxn={(mode)=>{setAddMode(mode);setAddModal(true);}} t={t} onTxnClick={setSelTxn}/>}
+        {tab==="home"&&<HomeScreen accounts={accounts} transactions={transactions} categories={categories} fixedExpenses={fixedExpenses} goals={goals} settings={settings} onSettingsChange={setSettings} onAddTxn={(mode)=>{setAddMode(mode);setAddModal(true);}} onGoalsChange={setGoals} t={t} onTxnClick={setSelTxn}/>}
         {tab==="analytics"&&<AnalyticsScreen transactions={transactions} categories={categories} settings={settings} t={t}/>}
         {tab==="history"&&<HistoryScreen transactions={transactions} accounts={accounts} categories={categories} settings={settings} onTxnClick={setSelTxn} t={t}/>}
         {tab==="settings"&&<SettingsScreen accounts={accounts} categories={categories} fixedExpenses={fixedExpenses} goals={goals} settings={settings} onSettingsChange={setSettings} onAccountsChange={setAccounts} onCategoriesChange={setCategories} onFixedChange={setFixed} onGoalsChange={setGoals} onReset={handleReset} onRefreshRates={handleRefreshRates} onExport={handleExportCSV} t={t}/>}
