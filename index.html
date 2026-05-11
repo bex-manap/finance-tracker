@@ -648,6 +648,16 @@ const TRANSLATIONS={
     "+ Income":"+ Доход","- Expense":"− Расход","⇄ Transfer":"⇄ Перевод",
     "My Accounts":"Мои счета","Recent Transactions":"Недавние операции",
     "Good morning":"Доброе утро","Good afternoon":"Добрый день","Good evening":"Добрый вечер","Good night":"Доброй ночи",
+    "day streak":"дн. подряд","Streak":"Серия","Best ever":"Рекорд","days":"дн.",
+    "How streaks work":"Как работает серия",
+    "Log any income or expense to count today":"Запиши доход или расход — день засчитан",
+    "Or tap 'Nothing spent today' on Home if you had no spending":"Или нажми «Сегодня без трат» на главной, если ничего не тратил",
+    "Transfers between your own accounts don't count alone":"Переводы между своими счетами одни не засчитываются",
+    "You have until midnight to keep today's streak alive":"Есть время до полуночи, чтобы продлить серию",
+    "Streak resets if a full day passes with no activity":"Серия обнуляется, если целый день нет активности",
+    "Streaks are a small motivator, not a measure of self-worth. Don't stress if you break one.":"Серия — это маленький мотиватор, не мерило тебя. Не переживай, если прервалась.",
+    "Got it":"Понятно",
+    "Nothing spent today? Tap to keep your streak":"Сегодня без трат? Нажми, чтобы продлить серию",
     "Last 10":"Последние 10",
     "Upcoming Fixed":"Постоянные расходы","Remaining budget":"Остаток бюджета",
     "Financial Wisdom":"Финансовая мудрость",
@@ -762,6 +772,16 @@ const TRANSLATIONS={
     "+ Income":"+ Кіріс","- Expense":"− Шығыс","⇄ Transfer":"⇄ Аударым",
     "My Accounts":"Менің шоттарым","Recent Transactions":"Соңғы операциялар",
     "Good morning":"Қайырлы таң","Good afternoon":"Қайырлы күн","Good evening":"Қайырлы кеш","Good night":"Қайырлы түн",
+    "day streak":"күн қатарынан","Streak":"Серия","Best ever":"Үздік","days":"күн",
+    "How streaks work":"Серия қалай жұмыс істейді",
+    "Log any income or expense to count today":"Кез келген кіріс не шығысты жазыңыз — күн саналады",
+    "Or tap 'Nothing spent today' on Home if you had no spending":"Немесе бүгін шығын болмаса басты беттегі «Бүгін шығынсыз» түймесін басыңыз",
+    "Transfers between your own accounts don't count alone":"Өз шоттарыңыз арасындағы аударымдар жалғыз саналмайды",
+    "You have until midnight to keep today's streak alive":"Сериясын сақтау үшін түнгі 12-ге дейін уақыт бар",
+    "Streak resets if a full day passes with no activity":"Бір күн толық белсенділіксіз өтсе серия нөлге қайтады",
+    "Streaks are a small motivator, not a measure of self-worth. Don't stress if you break one.":"Серия — кішкентай ынталандыру, өзіңіздің құндылығыңызды бағалау емес. Үзілсе уайымдамаңыз.",
+    "Got it":"Түсінікті",
+    "Nothing spent today? Tap to keep your streak":"Бүгін шығын болған жоқ па? Сериясын сақтау үшін басыңыз",
     "Last 10":"Соңғы 10",
     "Upcoming Fixed":"Тұрақты шығындар","Remaining budget":"Қалған бюджет",
     "Financial Wisdom":"Қаржы даналығы",
@@ -1682,6 +1702,67 @@ const getGreetingKey=()=>{
   return "Good night";
 };
 
+// Compute the user's current logging streak — consecutive calendar days ending today (or yesterday)
+// with EITHER a non-transfer transaction OR an explicit "quiet day" marker (user tapped to confirm
+// they had no spending). Transfers between own accounts don't count alone — too cheap to game.
+// quietDays: Set<string> of "YYYY-M-D" date keys the user marked as deliberately empty.
+// Returns { current, longest }.
+const computeStreak=(transactions,quietDays)=>{
+  // Build the set of qualifying days
+  const days=new Set();
+  (transactions||[]).forEach(tx=>{
+    if(tx.type==="transfer")return;
+    const d=new Date(tx.date);
+    days.add(`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`);
+  });
+  // Quiet-day markers also count
+  if(quietDays&&typeof quietDays.forEach==="function"){
+    quietDays.forEach(key=>days.add(key));
+  }
+  if(days.size===0)return{current:0,longest:0};
+
+  // Walk backwards from today to find current streak length.
+  // Grace rule: if today isn't logged yet but yesterday is, streak still counts (gives user
+  // until end of day to log without breaking it). Streak only breaks once a full day passes empty.
+  const today=new Date();
+  const todayKey=`${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
+  const yesterday=new Date(today.getTime()-86400000);
+  const yesterdayKey=`${yesterday.getFullYear()}-${yesterday.getMonth()}-${yesterday.getDate()}`;
+  let cursor;
+  if(days.has(todayKey)) cursor=new Date(today);
+  else if(days.has(yesterdayKey)) cursor=new Date(yesterday);
+  else return{current:0,longest:computeLongestStreak(days)};
+
+  let current=0;
+  while(true){
+    const key=`${cursor.getFullYear()}-${cursor.getMonth()}-${cursor.getDate()}`;
+    if(days.has(key)){
+      current++;
+      cursor=new Date(cursor.getTime()-86400000);
+    }else{
+      break;
+    }
+  }
+  return{current,longest:Math.max(current,computeLongestStreak(days))};
+};
+
+// Helper: find the longest run of consecutive days in the set (for "best ever" stat).
+const computeLongestStreak=(days)=>{
+  if(days.size===0)return 0;
+  // Sort all day-keys chronologically by parsing them back to dates
+  const sorted=[...days].map(k=>{
+    const[y,m,d]=k.split("-").map(Number);
+    return new Date(y,m,d).getTime();
+  }).sort((a,b)=>a-b);
+  let longest=1,run=1;
+  for(let i=1;i<sorted.length;i++){
+    const diffDays=Math.round((sorted[i]-sorted[i-1])/86400000);
+    if(diffDays===1){run++;longest=Math.max(longest,run);}
+    else run=1;
+  }
+  return longest;
+};
+
 function HomeScreen({accounts,transactions,categories,fixedExpenses,goals,settings,onSettingsChange,onAddTxn,onGoalsChange,onTabChange,t,onTxnClick}){
   const{selectedCurrency,balanceHidden,exchangeRates}=settings;
   // Pick today's quote from the user's UI language. Use the same daily index across
@@ -1697,6 +1778,31 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,goals,settin
   const monthTxns=transactions.filter(tx=>sameMonth(tx.date,now.getFullYear(),now.getMonth()));
   const monthIncome=monthTxns.filter(t=>t.type==="income").reduce((s,t)=>s+toKZT(t.amount,t.currency,exchangeRates),0);
   const monthExpense=monthTxns.filter(t=>t.type==="expense").reduce((s,t)=>s+toKZT(t.amount,t.currency,exchangeRates),0);
+  // Quiet days from settings: dates the user explicitly marked as "no spending" via the Home button.
+  // Stored as an array of "YYYY-M-D" strings in settings.quietDays so it persists with all other prefs.
+  const quietDaysSet=useMemo(()=>new Set(settings.quietDays||[]),[settings.quietDays]);
+  // Streak: consecutive days with at least one non-transfer transaction OR a quiet-day marker.
+  // Memoized for perf; recompute only when transactions or quietDays change.
+  const streak=useMemo(()=>computeStreak(transactions,quietDaysSet),[transactions,quietDaysSet]);
+  // Has today been "covered" already? Used to disable the quiet-day button to prevent double-tapping.
+  const todayKey=(()=>{const d=new Date();return`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;})();
+  const todayHasTxn=transactions.some(tx=>{
+    if(tx.type==="transfer")return false;
+    const d=new Date(tx.date);
+    return`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`===todayKey;
+  });
+  const todayIsQuiet=quietDaysSet.has(todayKey);
+  const todayCovered=todayHasTxn||todayIsQuiet;
+  // Controls whether the streak-rules modal is open
+  const[showStreakRules,setShowStreakRules]=useState(false);
+
+  // Mark today as a quiet day — appends to settings.quietDays array. Idempotent (won't double-add).
+  const markQuietDay=()=>{
+    if(todayCovered)return;
+    const newQuietDays=[...(settings.quietDays||[]),todayKey];
+    onSettingsChange({...settings,quietDays:newQuietDays});
+    haptic();
+  };
   const upcomingFixed=fixedExpenses.filter(fe=>{
     const paid=monthTxns.some(t=>t.type==="expense"&&t.note&&t.note.toLowerCase().includes(fe.name.toLowerCase()));
     return!paid;
@@ -1746,8 +1852,12 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,goals,settin
               : <div style={{width:42,height:42,borderRadius:"50%",background:"linear-gradient(135deg,#10b981,#34d399)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:600,fontSize:17,color:"#fff"}}>{(settings.displayName||"U")[0]}</div>
             }
             <div>
-              {/* Time-aware greeting + name on one line, no date underneath */}
-              <div style={{fontSize:12,color:t.textMuted,lineHeight:1.2}}>{tr(getGreetingKey(),settings.uiLanguage)}</div>
+              {/* Always show streak — 0 is fine, it's honest. Tap opens the rules modal. */}
+              <div
+                onClick={()=>{haptic();setShowStreakRules(true);}}
+                style={{fontSize:12,color:streak.current>0?"#f59e0b":t.textMuted,lineHeight:1.2,fontWeight:streak.current>0?600:400,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4}}>
+                🔥 {streak.current} {tr("day streak",settings.uiLanguage)}
+              </div>
               <div style={{fontSize:16,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif",lineHeight:1.2,marginTop:2}}>{settings.displayName}</div>
             </div>
           </div>
@@ -1999,8 +2109,107 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,goals,settin
               {tr("Go to History to view all transactions",settings.uiLanguage)}
             </button>
           )}
+          {/* "Mark today as a quiet day" — visible when today has no real txn AND hasn't been marked yet.
+              This is how users keep their streak alive on days with no spending without faking transactions. */}
+          {!todayCovered&&(
+            <button
+              onClick={markQuietDay}
+              style={{
+                width:"100%",
+                marginTop:8,
+                background:"#f59e0b15",
+                border:`1px dashed #f59e0b55`,
+                borderRadius:12,
+                padding:"12px",
+                color:"#f59e0b",
+                fontSize:12,
+                cursor:"pointer",
+                fontFamily:"system-ui,sans-serif",
+                display:"flex",
+                alignItems:"center",
+                justifyContent:"center",
+                gap:6,
+                fontWeight:600
+              }}>
+              🔥 {tr("Nothing spent today? Tap to keep your streak",settings.uiLanguage)}
+            </button>
+          )}
         </div>
       </div>
+
+      {/* ── STREAK RULES MODAL ── */}
+      {/* Bottom-sheet style modal that explains how streaks work + shows the user's current/best stats. */}
+      {showStreakRules&&(
+        <div onClick={()=>setShowStreakRules(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:t.bg,borderRadius:"24px 24px 0 0",padding:"20px 16px calc(20px + env(safe-area-inset-bottom, 0px))",width:"100%",maxWidth:430,maxHeight:"90vh",overflow:"auto"}}>
+            <div style={{width:36,height:4,background:t.border,borderRadius:2,margin:"0 auto 16px"}}/>
+
+            {/* Header: big streak number + best ever */}
+            <div style={{textAlign:"center",marginBottom:20}}>
+              <div style={{fontSize:48,marginBottom:4}}>🔥</div>
+              <div style={{fontSize:32,fontWeight:700,color:streak.current>0?"#f59e0b":t.text,fontFamily:"system-ui,sans-serif",lineHeight:1}}>
+                {streak.current}
+              </div>
+              <div style={{fontSize:13,color:t.textMuted,marginTop:4}}>
+                {tr("day streak",settings.uiLanguage)}
+              </div>
+              {streak.longest>streak.current&&(
+                <div style={{fontSize:11,color:t.textMuted,marginTop:8}}>
+                  {tr("Best ever",settings.uiLanguage)}: <span style={{color:t.text,fontWeight:600}}>{streak.longest} {tr("days",settings.uiLanguage)}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Rules */}
+            <div style={{fontSize:12,color:t.textMuted,marginBottom:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.4px"}}>
+              {tr("How streaks work",settings.uiLanguage)}
+            </div>
+            <div style={{background:t.bgCard,border:`1px solid ${t.border}`,borderRadius:12,padding:"14px",marginBottom:16}}>
+              {[
+                {icon:"✅",text:tr("Log any income or expense to count today",settings.uiLanguage)},
+                {icon:"🔥",text:tr("Or tap 'Nothing spent today' on Home if you had no spending",settings.uiLanguage)},
+                {icon:"🔄",text:tr("Transfers between your own accounts don't count alone",settings.uiLanguage)},
+                {icon:"⏰",text:tr("You have until midnight to keep today's streak alive",settings.uiLanguage)},
+                {icon:"💔",text:tr("Streak resets if a full day passes with no activity",settings.uiLanguage)}
+              ].map((rule,i,arr)=>(
+                <div key={i} style={{
+                  display:"flex",
+                  alignItems:"flex-start",
+                  gap:10,
+                  paddingTop:i===0?0:10,
+                  paddingBottom:i===arr.length-1?0:10,
+                  borderBottom:i===arr.length-1?"none":`1px solid ${t.border}`
+                }}>
+                  <span style={{fontSize:16,flexShrink:0,marginTop:1}}>{rule.icon}</span>
+                  <span style={{fontSize:13,color:t.text,lineHeight:1.5}}>{rule.text}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Honest disclaimer */}
+            <div style={{fontSize:11,color:t.textMuted,marginBottom:14,fontStyle:"italic",lineHeight:1.5,textAlign:"center"}}>
+              💡 {tr("Streaks are a small motivator, not a measure of self-worth. Don't stress if you break one.",settings.uiLanguage)}
+            </div>
+
+            <button
+              onClick={()=>setShowStreakRules(false)}
+              style={{
+                width:"100%",
+                background:t.bgCard2,
+                color:t.text,
+                border:`1px solid ${t.border}`,
+                borderRadius:12,
+                padding:"14px",
+                fontSize:15,
+                fontWeight:600,
+                cursor:"pointer",
+                fontFamily:"system-ui,sans-serif"
+              }}>
+              {tr("Got it",settings.uiLanguage)}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2804,7 +3013,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
   );
 
   const Section=({k,label,icon})=>(
-    <div onClick={()=>setSec(sec===k?null:k)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 16px",background:t.bgCard,borderRadius:12,cursor:"pointer",border:`1px solid ${t.border}`,marginBottom:8}}>
+    <div onClick={()=>setSec(sec===k?null:k)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 16px",background:t.bgCard,borderRadius:12,cursor:"pointer",border:`1px solid ${t.border}`,marginBottom:10}}>
       <div style={{display:"flex",alignItems:"center",gap:10}}>
         <span style={{fontSize:20}}>{icon}</span>
         <span style={{fontSize:15,fontWeight:500,color:t.text}}>{label}</span>
@@ -2833,9 +3042,16 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
       </div>
 
       {/* Quick Toggles */}
-      <div style={{background:t.bgCard,borderRadius:14,padding:"14px 16px",border:`1px solid ${t.border}`,marginBottom:12}}>
-        {[{l:"🌙 Dark Mode",k:"darkMode"},{l:"🤖 AI Coach",k:"aiEnabled"},{l:"🔔 Daily Reminders",k:"remindersEnabled"}].map(({l,k},i)=>(
-          <div key={k} style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingBottom:i===0?12:0,borderBottom:i===0?`1px solid ${t.border}`:"none",paddingTop:i===1?12:0}}>
+      <div style={{background:t.bgCard,borderRadius:14,padding:"4px 16px",border:`1px solid ${t.border}`,marginBottom:14}}>
+        {[{l:"🌙 Dark Mode",k:"darkMode"},{l:"🤖 AI Coach",k:"aiEnabled"},{l:"🔔 Daily Reminders",k:"remindersEnabled"}].map(({l,k},i,arr)=>(
+          <div key={k} style={{
+            display:"flex",
+            justifyContent:"space-between",
+            alignItems:"center",
+            padding:"12px 0",
+            // Subtle divider between every row except the last — keeps spacing uniform
+            borderBottom:i<arr.length-1?`1px solid ${t.border}`:"none"
+          }}>
             <span style={{fontSize:15,fontWeight:500,color:t.text}}>{l}</span>
             <Toggle value={settings[k]} onChange={()=>onSettingsChange({...settings,[k]:!settings[k]})}/>
           </div>
@@ -2844,7 +3060,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
 
       <Section k="accounts" label={tr("Accounts",settings.uiLanguage)} icon="🏦"/>
       {sec==="accounts"&&(
-        <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:8}}>
+        <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:12}}>
           {accounts.map(a=>{
             const isEditing=editAccId===a.id;
             const allowedCurrencies=getAccountCurrencies(a.type);
@@ -2900,7 +3116,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
 
       <Section k="categories" label={tr("Categories",settings.uiLanguage)} icon="🗂️"/>
       {sec==="categories"&&(
-        <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:8}}>
+        <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:12}}>
           {/* Smart budget suggestion banner — appears when there are expense categories without budgets
               and we have last month's spending data to suggest reasonable amounts. */}
           <BudgetSuggestionBanner categories={categories} transactions={transactions} settings={settings} onCategoriesChange={onCategoriesChange} t={t}/>
@@ -3033,7 +3249,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
 
       <Section k="fixed" label={tr("Fixed Expenses",settings.uiLanguage)} icon="📅"/>
       {sec==="fixed"&&(
-        <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:8}}>
+        <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:12}}>
           {fixedExpenses.map(fe=>(
             <div key={fe.id} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 0",borderBottom:`1px solid ${t.border}`}}>
               <div style={{flex:1}}>
@@ -3056,7 +3272,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
 
       <Section k="goals" label={tr("Savings Goals",settings.uiLanguage)} icon="🎯"/>
       {sec==="goals"&&(
-        <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:8}}>
+        <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:12}}>
           {(goals||[]).length===0&&(
             <div style={{fontSize:12,color:t.textMuted,fontStyle:"italic",padding:"8px 4px",lineHeight:1.5}}>
               No goals yet. Add one below — your progress will appear on the Home screen.
@@ -3150,7 +3366,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
 
       <Section k="appLang" label={tr("App Language",settings.uiLanguage)} icon="🌐"/>
       {sec==="appLang"&&(
-        <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:8}}>
+        <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:12}}>
           <div style={{fontSize:11,color:t.textMuted,marginBottom:8,lineHeight:1.5}}>
             Controls the language of buttons, labels, and menus throughout the app. Independent from your AI companion's language.
           </div>
@@ -3174,7 +3390,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
 
       <Section k="ai" label={tr("AI Coach Settings",settings.uiLanguage)} icon="🤖"/>
       {sec==="ai"&&(
-        <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:8,display:"flex",flexDirection:"column",gap:10}}>
+        <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:12,display:"flex",flexDirection:"column",gap:10}}>
           <div>
             <div style={{fontSize:12,color:t.textMuted,marginBottom:8}}>Your AI Companion</div>
             <div style={{display:"flex",gap:10}}>
@@ -3211,7 +3427,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
 
       <Section k="currencies" label={tr("Exchange Rates",settings.uiLanguage)} icon="💱"/>
       {sec==="currencies"&&(
-        <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:8}}>
+        <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:12}}>
           <div style={{fontSize:11,color:t.textMuted,marginBottom:10,lineHeight:1.5}}>
             Rates update automatically once per hour from public APIs (exchangerate-api.com & CoinGecko).
             {settings.lastRateUpdate&&(
@@ -3233,7 +3449,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
       )}
 
       {/* Export — download a CSV of all transactions */}
-      <div style={{marginTop:16,padding:"16px",background:t.bgCard,borderRadius:12,border:`1px solid ${t.border}`}}>
+      <div style={{marginTop:16,marginBottom:12,padding:"16px",background:t.bgCard,borderRadius:12,border:`1px solid ${t.border}`}}>
         <div style={{fontSize:13,fontWeight:600,color:t.textMuted,marginBottom:10}}>📤 Export Data</div>
         <button onClick={onExport} style={{width:"100%",background:"transparent",color:t.accent,border:`1.5px solid ${t.accent}`,borderRadius:10,padding:"12px",fontSize:14,fontWeight:500,cursor:"pointer",fontFamily:"system-ui,sans-serif"}}>
           📊 Download CSV
@@ -3247,7 +3463,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
       {/* Common questions users ask. Expandable accordion to save space. */}
       <Section k="faq" label={tr("FAQ",settings.uiLanguage)} icon="❓"/>
       {sec==="faq"&&(
-        <div style={{background:t.bgCard2,borderRadius:12,padding:"4px",border:`1px solid ${t.border}`,marginBottom:8}}>
+        <div style={{background:t.bgCard2,borderRadius:12,padding:"4px",border:`1px solid ${t.border}`,marginBottom:12}}>
           {FAQ_ITEMS.map((item,i)=>(
             <FAQRow key={i} q={tr(item.q,settings.uiLanguage)} a={tr(item.a,settings.uiLanguage)} t={t} isLast={i===FAQ_ITEMS.length-1}/>
           ))}
@@ -3258,7 +3474,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
       {/* Direct contact info for support / feedback. Tap-to-open for both Telegram and Gmail. */}
       <Section k="contact" label={tr("Contact",settings.uiLanguage)} icon="✉️"/>
       {sec==="contact"&&(
-        <div style={{background:t.bgCard2,borderRadius:12,padding:"14px",border:`1px solid ${t.border}`,marginBottom:8}}>
+        <div style={{background:t.bgCard2,borderRadius:12,padding:"14px",border:`1px solid ${t.border}`,marginBottom:12}}>
           <div style={{fontSize:12,color:t.textMuted,marginBottom:14,lineHeight:1.5}}>
             {tr("Have feedback, found a bug, or have a feature suggestion? Reach out — I genuinely read every message.",settings.uiLanguage)}
           </div>
