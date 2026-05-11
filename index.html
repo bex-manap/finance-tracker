@@ -695,6 +695,8 @@ const TRANSLATIONS={
     "Income is new money entering your accounts (salary, freelance, gifts). Transfers are moving money between your own accounts (e.g., Freedom Bank → Kaspi) — they don't change your total balance. The Home stats only count income/expenses, not transfers.":"Доход — это новые деньги, поступающие на ваши счета (зарплата, фриланс, подарки). Переводы — это движение денег между вашими собственными счетами (напр. Freedom Bank → Kaspi); они не меняют общий баланс. Статистика на главной учитывает только доходы/расходы, не переводы.",
     "How do Savings Goals work?":"Как работают Цели накопления?",
     "Goals are virtual reservations — when you 'contribute' to a goal, your account balances stay the same. The contribution just records your intent to save toward that goal. This way your real cash stays accurate while you track progress separately.":"Цели — это виртуальные резервации. Когда вы «пополняете» цель, балансы счетов не меняются. Пополнение просто фиксирует ваше намерение копить на эту цель. Так реальный остаток денег остаётся точным, а прогресс по цели отслеживается отдельно.",
+    "How do category budgets work?":"Как работают бюджеты по категориям?",
+    "In Settings → Categories, tap any expense category to expand it and enter a monthly budget. The Home screen shows a 'Budget Pulse' card that flags categories near or over budget. Budgets are soft targets — they help you stay aware, not punish you. The coloring is pace-aware: at 60% through the month with 65% spent, you're fine. At 30% through with 65% spent, you're warned.":"В Настройки → Категории нажмите на любую категорию расходов, чтобы раскрыть её и ввести месячный бюджет. На главной появится карточка «Бюджеты», которая отмечает категории близко к лимиту или с перерасходом. Бюджеты — мягкие цели: они помогают осознавать траты, а не наказывают. Цвет учитывает темп: если на 60% месяца потрачено 65% — всё нормально. Если на 30% месяца уже 65% — это предупреждение.",
     "What does the AI Pet Coach do?":"Что делает ИИ-питомец?",
     "After you log income or expense transactions, your chosen pet (dog or cat) writes a short comment about it — encouraging, judgmental, or harsh, depending on the tone you picked in Settings. It's powered by Anthropic's Claude AI. You can disable it anytime in Settings.":"После записи дохода или расхода ваш питомец (собака или кот) пишет короткий комментарий — поддерживающий, осуждающий или жёсткий, в зависимости от тона, выбранного в настройках. Работает на ИИ Claude от Anthropic. Можно отключить в любой момент в настройках.",
     "How are reminders sent?":"Как отправляются напоминания?",
@@ -716,6 +718,17 @@ const TRANSLATIONS={
     "Is this app free?":"Приложение бесплатное?",
     "Yes, completely free. No ads, no premium tier, no subscriptions. If you'd like to support development, reach out via the Contact section in Settings.":"Да, полностью бесплатное. Без рекламы, премиум-уровней и подписок. Если хотите поддержать разработку — напишите через раздел Связаться в настройках.",
     "Go to History to view all transactions":"Открыть Историю, чтобы увидеть все транзакции",
+    // Budgets
+    "Budget Pulse":"Бюджеты","Over budget":"Перерасход","Ahead of pace":"Опережение темпа","Watch":"Внимание","On track":"В норме",
+    "days left":"дн. до конца месяца",
+    "Monthly budget":"Месячный бюджет",
+    "e.g., 40000 — leave empty for no budget":"напр. 40000 — оставьте пустым, чтобы убрать бюджет",
+    "Soft target. Tracked on Home with pace-aware coloring.":"Мягкая цель. Отображается на главной с учётом темпа расходов.",
+    "Clear":"Очистить",
+    "Suggested budgets":"Предложенные бюджеты",
+    "Based on last month's spending, with ~10% headroom rounded to a clean number:":"На основе расходов за прошлый месяц, с запасом ~10%, округлено до ровного значения:",
+    "was":"было",
+    "Apply all":"Применить все","Skip":"Пропустить",
     "Auto (System)":"Авто (система)",
     // Goals
     "Savings Goals":"Цели накопления","Remaining":"Осталось","equivalent of":"равно",
@@ -791,6 +804,8 @@ const TRANSLATIONS={
     "Income is new money entering your accounts (salary, freelance, gifts). Transfers are moving money between your own accounts (e.g., Freedom Bank → Kaspi) — they don't change your total balance. The Home stats only count income/expenses, not transfers.":"Кіріс — шоттарыңызға жаңадан түсетін ақша (жалақы, фриланс, сыйлықтар). Аударым — өз шоттарыңыздың арасында ақша қозғалысы (мыс. Freedom Bank → Kaspi); ол жалпы балансты өзгертпейді. Басты беттегі статистика тек кіріс/шығысты есепке алады, аударымдарды емес.",
     "How do Savings Goals work?":"Жинақтау мақсаттары қалай жұмыс істейді?",
     "Goals are virtual reservations — when you 'contribute' to a goal, your account balances stay the same. The contribution just records your intent to save toward that goal. This way your real cash stays accurate while you track progress separately.":"Мақсаттар — виртуалды резервтер. Сіз мақсатты «толықтырғанда» шот баланстары өзгермейді. Толықтыру тек сіздің сол мақсатқа жинау ниетіңізді жазып қояды. Осылайша нақты ақша балансы дұрыс күйінде қалады, ал мақсаттың ілгерілеуі бөлек есепке алынады.",
+    "How do category budgets work?":"Санаттар бойынша бюджет қалай жұмыс істейді?",
+    "In Settings → Categories, tap any expense category to expand it and enter a monthly budget. The Home screen shows a 'Budget Pulse' card that flags categories near or over budget. Budgets are soft targets — they help you stay aware, not punish you. The coloring is pace-aware: at 60% through the month with 65% spent, you're fine. At 30% through with 65% spent, you're warned.":"Параметрлер → Санаттар бөлімінде кез келген шығыс санатына басып, оны кеңейтіп айлық бюджет енгізіңіз. Басты бетте «Бюджеттер» картасы пайда болады — ол бюджетке жақын немесе одан асып кеткен санаттарды белгілейді. Бюджеттер — жұмсақ мақсаттар: олар сізді жазалау үшін емес, хабардар ету үшін. Түс қарқынды есепке алады: айдың 60%-ы өтіп, 65% жұмсалса — қалыпты. 30%-ы өтіп, 65% жұмсалса — ескерту.",
     "What does the AI Pet Coach do?":"ЖИ серігі не істейді?",
     "After you log income or expense transactions, your chosen pet (dog or cat) writes a short comment about it — encouraging, judgmental, or harsh, depending on the tone you picked in Settings. It's powered by Anthropic's Claude AI. You can disable it anytime in Settings.":"Сіз кіріс немесе шығысты жазғаннан кейін таңдаған серігіңіз (ит немесе мысық) ол туралы қысқа пікір жазады — Параметрлерде таңдаған тоныңызға қарай қолдау, сын немесе қатаң түрде. Anthropic компаниясының Claude ЖИ-мен жұмыс істейді. Кез келген уақытта Параметрлерден өшіруге болады.",
     "How are reminders sent?":"Еске салулар қалай жіберіледі?",
@@ -812,6 +827,17 @@ const TRANSLATIONS={
     "Is this app free?":"Қолданба тегін бе?",
     "Yes, completely free. No ads, no premium tier, no subscriptions. If you'd like to support development, reach out via the Contact section in Settings.":"Иә, толығымен тегін. Жарнама, премиум деңгей, жазылым жоқ. Әзірлеуді қолдағыңыз келсе, Параметрлердегі Байланыс бөлімі арқылы жазыңыз.",
     "Go to History to view all transactions":"Барлық транзакцияны көру үшін Тарихқа өтіңіз",
+    // Budgets
+    "Budget Pulse":"Бюджеттер","Over budget":"Бюджеттен асып кетті","Ahead of pace":"Қарқыннан асыңқырап","Watch":"Назар салыңыз","On track":"Қалыпты",
+    "days left":"күн қалды",
+    "Monthly budget":"Айлық бюджет",
+    "e.g., 40000 — leave empty for no budget":"мыс. 40000 — бюджетті алып тастау үшін бос қалдырыңыз",
+    "Soft target. Tracked on Home with pace-aware coloring.":"Жұмсақ мақсат. Басты бетте шығыс қарқынына сай түспен көрсетіледі.",
+    "Clear":"Өшіру",
+    "Suggested budgets":"Ұсынылған бюджеттер",
+    "Based on last month's spending, with ~10% headroom rounded to a clean number:":"Өткен айдағы шығыс негізінде, ~10% запаспен, ыңғайлы санға дөңгелектелген:",
+    "was":"болды",
+    "Apply all":"Барлығын қолдану","Skip":"Өткізіп жіберу",
     "Auto (System)":"Авто (жүйе)",
     "Savings Goals":"Жинақтау мақсаттары","Remaining":"Қалды","equivalent of":"тең",
     "Contribute":"Толықтыру","Contribute to":"Толықтыру","Amount":"Сома",
@@ -1271,6 +1297,115 @@ function TxnDetail({txn,open,onClose,accounts,categories,onDelete,settings,t}){
 // ── GOALS CARD (HOME SCREEN) ──
 // Compact horizontal scroll showing each goal's progress with bar + comparison.
 // Tap a goal to expand and see what the remaining amount could buy.
+// ── BUDGET PULSE CARD (HOME) ──
+// Shows categories that are near or over their monthly budget. Quiet when everything is fine.
+// Color is determined by *pace* — % of budget spent vs % of month elapsed — not raw percentage.
+// This is the key insight: 60% through the month at 65% of budget is fine.
+// 30% through the month at 65% of budget is a warning.
+function BudgetPulseCard({categories,transactions,settings,t,onTabChange}){
+  const{selectedCurrency,exchangeRates,uiLanguage}=settings;
+  const lang=uiLanguage||"English";
+
+  // Compute current month progress (0 to 1)
+  const now=new Date();
+  const monthStart=new Date(now.getFullYear(),now.getMonth(),1);
+  const monthEnd=new Date(now.getFullYear(),now.getMonth()+1,0,23,59,59);
+  const monthProgress=(now.getTime()-monthStart.getTime())/(monthEnd.getTime()-monthStart.getTime());
+  const daysLeft=Math.max(0,Math.ceil((monthEnd.getTime()-now.getTime())/86400000));
+
+  // Get categories that have budgets set
+  const budgetedCats=(categories||[]).filter(c=>c.budgetKzt&&c.budgetKzt>0&&(c.type||"expense")==="expense");
+  if(budgetedCats.length===0)return null;
+
+  // Compute spend this month per budgeted category
+  const stats=budgetedCats.map(cat=>{
+    let spentKzt=0;
+    transactions.forEach(tx=>{
+      if(tx.type!=="expense")return;
+      const txDate=new Date(tx.date);
+      if(txDate<monthStart||txDate>monthEnd)return;
+      if(tx.categoryId!==cat.id)return;
+      spentKzt+=toKZT(tx.amount,tx.currency,exchangeRates);
+    });
+    const pctSpent=spentKzt/cat.budgetKzt;
+    // Pace ratio: how much you've spent vs how much of the month has passed.
+    // 1.0 = perfectly on pace; >1 = ahead of pace (concerning); <1 = under pace (good).
+    const paceRatio=monthProgress>0.05?pctSpent/monthProgress:pctSpent;
+    let status="ok";
+    if(pctSpent>=1)status="over";
+    else if(paceRatio>=1.3)status="warning";  // 30% ahead of pace
+    else if(paceRatio>=1.1)status="watch";    // 10% ahead of pace
+    return{cat,spentKzt,pctSpent,paceRatio,status};
+  });
+
+  // Sort: over budget first, then ahead-of-pace ones, then by raw % spent
+  const statusOrder={over:0,warning:1,watch:2,ok:3};
+  stats.sort((a,b)=>{
+    if(a.status!==b.status)return statusOrder[a.status]-statusOrder[b.status];
+    return b.pctSpent-a.pctSpent;
+  });
+
+  // Only show categories that need attention OR show top 3 if everything is ok
+  const concerning=stats.filter(s=>s.status!=="ok").slice(0,4);
+  const toShow=concerning.length>0?concerning:stats.slice(0,2); // when all ok, show top 2 anyway for context
+
+  // Color + label per status
+  const statusInfo={
+    over:    {color:"#ef4444",bg:"#ef444415",border:"#ef444433",label:tr("Over budget",lang)},
+    warning: {color:"#f59e0b",bg:"#f59e0b15",border:"#f59e0b33",label:tr("Ahead of pace",lang)},
+    watch:   {color:"#eab308",bg:"#eab30815",border:"#eab30833",label:tr("Watch",lang)},
+    ok:      {color:"#10b981",bg:"#10b98115",border:"#10b98133",label:tr("On track",lang)},
+  };
+
+  return(
+    <div style={{marginBottom:18}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+        <div style={{fontSize:16,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}}>
+          💼 {tr("Budget Pulse",lang)}
+        </div>
+        <div style={{fontSize:11,color:t.textMuted}}>{daysLeft} {tr("days left",lang)}</div>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {toShow.map(({cat,spentKzt,pctSpent,status})=>{
+          const info=statusInfo[status];
+          const budgetDisplay=fromKZT(cat.budgetKzt,selectedCurrency,exchangeRates);
+          const spentDisplay=fromKZT(spentKzt,selectedCurrency,exchangeRates);
+          const overByKzt=spentKzt-cat.budgetKzt;
+          const overDisplay=fromKZT(Math.abs(overByKzt),selectedCurrency,exchangeRates);
+          // Cap bar at 100% visually, but show the actual overflow in numbers
+          const barPct=Math.min(100,pctSpent*100);
+          return(
+            <div key={cat.id}
+              onClick={()=>onTabChange&&onTabChange("history")}
+              style={{background:t.bgCard,borderRadius:12,padding:"12px 14px",border:`1px solid ${info.border}`,cursor:"pointer"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+                <div style={{fontSize:20}}>{cat.icon}</div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+                    <div style={{fontSize:14,fontWeight:600,color:t.text}}>{cat.name}</div>
+                    <div style={{fontSize:11,fontWeight:600,color:info.color,background:info.bg,padding:"2px 7px",borderRadius:8,whiteSpace:"nowrap"}}>{info.label}</div>
+                  </div>
+                  <div style={{fontSize:11,color:t.textMuted,marginTop:2,fontFamily:"monospace"}}>
+                    {fmtAmt(spentDisplay,selectedCurrency)} / {fmtAmt(budgetDisplay,selectedCurrency)}
+                    {status==="over"&&<span style={{color:"#ef4444",marginLeft:6}}>(+{fmtAmt(overDisplay,selectedCurrency)})</span>}
+                  </div>
+                </div>
+              </div>
+              <div style={{height:6,background:t.bgInput,borderRadius:3,overflow:"hidden",position:"relative"}}>
+                <div style={{height:"100%",width:`${barPct}%`,background:info.color,borderRadius:3,transition:"width .4s"}}/>
+                {/* Vertical line marking month-progress position so user sees pace context */}
+                {monthProgress>0.05&&monthProgress<0.95&&(
+                  <div style={{position:"absolute",left:`${monthProgress*100}%`,top:-1,bottom:-1,width:1,background:t.textMuted,opacity:0.5}}/>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function GoalsCard({goals,accounts,settings,onGoalsChange,t}){
   const[expandedId,setExpandedId]=useState(null);
   const[contributingGoal,setContributingGoal]=useState(null); // null or the goal object
@@ -1754,6 +1889,10 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,goals,settin
         )}
 
         {/* Goals — savings progress with comparisons */}
+        {/* Budget Pulse — categories near/over budget, quiet when everything ok */}
+        <BudgetPulseCard categories={categories} transactions={transactions} settings={settings} t={t} onTabChange={onTabChange}/>
+
+        <BudgetPulseCard categories={categories} transactions={transactions} settings={settings} t={t} onTabChange={onTabChange}/>
         <GoalsCard goals={goals} accounts={accounts} settings={settings} onGoalsChange={onGoalsChange} t={t}/>
 
         {/* Recent Transactions — last 10, grouped by date for easier scanning */}
@@ -2466,6 +2605,10 @@ const FAQ_ITEMS=[
     a:"Goals are virtual reservations — when you 'contribute' to a goal, your account balances stay the same. The contribution just records your intent to save toward that goal. This way your real cash stays accurate while you track progress separately."
   },
   {
+    q:"How do category budgets work?",
+    a:"In Settings → Categories, tap any expense category to expand it and enter a monthly budget. The Home screen shows a 'Budget Pulse' card that flags categories near or over budget. Budgets are soft targets — they help you stay aware, not punish you. The coloring is pace-aware: at 60% through the month with 65% spent, you're fine. At 30% through with 65% spent, you're warned."
+  },
+  {
     q:"What does the AI Pet Coach do?",
     a:"After you log income or expense transactions, your chosen pet (dog or cat) writes a short comment about it — encouraging, judgmental, or harsh, depending on the tone you picked in Settings. It's powered by Anthropic's Claude AI. You can disable it anytime in Settings."
   },
@@ -2539,7 +2682,96 @@ function FAQRow({q,a,t,isLast}){
   );
 }
 
-function SettingsScreen({accounts,categories,fixedExpenses,goals,settings,onSettingsChange,onAccountsChange,onCategoriesChange,onFixedChange,onGoalsChange,onReset,onRefreshRates,onExport,t}){
+// ── BUDGET SUGGESTION BANNER ──
+// Shown at the top of the Categories settings when there are expense categories without
+// budgets AND we have data from the previous month to base suggestions on.
+// Suggests budgets for the top 3 spend categories using last month's actual spending,
+// rounded up to a clean number. User can accept all, dismiss permanently, or set them manually later.
+function BudgetSuggestionBanner({categories,transactions,settings,onCategoriesChange,t}){
+  const[dismissed,setDismissed]=useState(false);
+  if(dismissed)return null;
+
+  // Compute last month's spend per category (in KZT)
+  const now=new Date();
+  const lastMonthStart=new Date(now.getFullYear(),now.getMonth()-1,1);
+  const lastMonthEnd=new Date(now.getFullYear(),now.getMonth(),0,23,59,59);
+
+  const spendByCat={};
+  (transactions||[]).forEach(tx=>{
+    if(tx.type!=="expense")return;
+    const txDate=new Date(tx.date);
+    if(txDate<lastMonthStart||txDate>lastMonthEnd)return;
+    const kzt=toKZT(tx.amount,tx.currency,settings.exchangeRates);
+    spendByCat[tx.categoryId]=(spendByCat[tx.categoryId]||0)+kzt;
+  });
+
+  // Find top 3 expense categories without budgets, where last-month spend > 5000 KZT (meaningful)
+  const candidates=(categories||[])
+    .filter(c=>{
+      const isExpense=(c.type||"expense")==="expense";
+      const noBudget=!c.budgetKzt;
+      const meaningfulSpend=(spendByCat[c.id]||0)>=5000;
+      return isExpense&&noBudget&&meaningfulSpend;
+    })
+    .map(c=>({cat:c,lastSpend:spendByCat[c.id]||0}))
+    .sort((a,b)=>b.lastSpend-a.lastSpend)
+    .slice(0,3);
+
+  if(candidates.length===0)return null;
+
+  // Round suggested budget up to a clean number (next multiple of 5000 KZT)
+  // Add ~10% headroom so it's achievable, not stressful
+  const roundClean=(kzt)=>{
+    const withHeadroom=kzt*1.1;
+    return Math.ceil(withHeadroom/5000)*5000;
+  };
+
+  const acceptAll=()=>{
+    const updates=categories.map(c=>{
+      const match=candidates.find(x=>x.cat.id===c.id);
+      return match?{...c,budgetKzt:roundClean(match.lastSpend)}:c;
+    });
+    onCategoriesChange(updates);
+    setDismissed(true);
+  };
+
+  return(
+    <div style={{background:"#10b98115",border:"1px solid #10b98144",borderRadius:10,padding:"12px",marginBottom:12}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+        <div style={{fontSize:12,fontWeight:600,color:"#10b981"}}>💡 {tr("Suggested budgets",settings.uiLanguage)}</div>
+        <button onClick={()=>setDismissed(true)} style={{background:"transparent",border:"none",color:"#10b98199",fontSize:14,cursor:"pointer",padding:0,lineHeight:1}}>✕</button>
+      </div>
+      <div style={{fontSize:11,color:settings.darkMode?"#cbd5e1":"#475569",marginBottom:10,lineHeight:1.45}}>
+        {tr("Based on last month's spending, with ~10% headroom rounded to a clean number:",settings.uiLanguage)}
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
+        {candidates.map(({cat,lastSpend})=>{
+          const suggestedKzt=roundClean(lastSpend);
+          const suggestedDisplay=fromKZT(suggestedKzt,settings.selectedCurrency,settings.exchangeRates);
+          const lastSpendDisplay=fromKZT(lastSpend,settings.selectedCurrency,settings.exchangeRates);
+          return(
+            <div key={cat.id} style={{display:"flex",alignItems:"center",gap:8,fontSize:12}}>
+              <span style={{fontSize:16}}>{cat.icon}</span>
+              <span style={{flex:1,color:settings.darkMode?"#e2e8f0":"#1e293b"}}>{cat.name}</span>
+              <span style={{fontFamily:"monospace",color:"#10b981",fontWeight:600}}>{fmtCompact(suggestedDisplay)}</span>
+              <span style={{fontSize:10,color:settings.darkMode?"#94a3b8":"#64748b"}}>({tr("was",settings.uiLanguage)} {fmtCompact(lastSpendDisplay)})</span>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{display:"flex",gap:8}}>
+        <button onClick={acceptAll} style={{flex:1,background:"#10b981",border:"none",borderRadius:7,padding:"8px",color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"system-ui,sans-serif"}}>
+          {tr("Apply all",settings.uiLanguage)}
+        </button>
+        <button onClick={()=>setDismissed(true)} style={{background:"transparent",border:`1px solid ${t.border}`,borderRadius:7,padding:"8px 14px",color:t.textMuted,fontSize:12,cursor:"pointer",fontFamily:"system-ui,sans-serif"}}>
+          {tr("Skip",settings.uiLanguage)}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,settings,onSettingsChange,onAccountsChange,onCategoriesChange,onFixedChange,onGoalsChange,onReset,onRefreshRates,onExport,t}){
   const[sec,setSec]=useState(null);
   const[editAccId,setEditAccId]=useState(null);
   const[editAccName,setEditAccName]=useState("");
@@ -2669,6 +2901,10 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,settings,onSett
       <Section k="categories" label={tr("Categories",settings.uiLanguage)} icon="🗂️"/>
       {sec==="categories"&&(
         <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:8}}>
+          {/* Smart budget suggestion banner — appears when there are expense categories without budgets
+              and we have last month's spending data to suggest reasonable amounts. */}
+          <BudgetSuggestionBanner categories={categories} transactions={transactions} settings={settings} onCategoriesChange={onCategoriesChange} t={t}/>
+
           {/* Group categories by type for clearer Income vs Expense separation */}
           {["expense","income"].map(groupType=>{
             const groupCats=categories.filter(c=>{
@@ -2685,17 +2921,55 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,settings,onSett
                 {groupCats.map(c=>{
                   const isExpanded=expandedCatId===c.id;
                   const subs=c.subcategories||[];
+                  const hasBudget=c.budgetKzt&&c.budgetKzt>0;
+                  const budgetDisplay=hasBudget?fromKZT(c.budgetKzt,settings.selectedCurrency,settings.exchangeRates):0;
                   return(
                     <div key={c.id} style={{background:t.bgInput,borderRadius:10,marginBottom:6,overflow:"hidden"}}>
                       <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",cursor:"pointer"}} onClick={()=>{setExpandedCatId(isExpanded?null:c.id);setNewSubName("");}}>
                         <span style={{fontSize:18}}>{c.icon}</span>
                         <span style={{flex:1,fontSize:14,color:t.text,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</span>
+                        {/* Budget chip shown inline when set — for expense categories only */}
+                        {groupType==="expense"&&hasBudget&&(
+                          <span style={{color:"#10b981",background:"#10b98115",padding:"2px 7px",borderRadius:7,fontSize:10,fontWeight:600,fontFamily:"monospace",flexShrink:0}}>💼 {fmtCompact(budgetDisplay)}</span>
+                        )}
                         <span style={{color:t.textMuted,fontSize:11,flexShrink:0}}>{subs.length} sub</span>
                         <span style={{color:t.textMuted,fontSize:14,transform:isExpanded?"rotate(90deg)":"none",transition:"transform .15s"}}>›</span>
                         <button onClick={(e)=>{e.stopPropagation();if(confirm(`Delete category "${c.name}" and all its subcategories?`))onCategoriesChange(categories.filter(x=>x.id!==c.id));}} style={{background:"#ef444422",border:"none",borderRadius:6,padding:"4px 9px",color:"#ef4444",cursor:"pointer",fontSize:11,flexShrink:0}}>✕</button>
                       </div>
                       {isExpanded&&(
                         <div className="fade-in" style={{padding:"4px 12px 12px",borderTop:`1px solid ${t.border}`}}>
+                          {/* Budget input — expense categories only. Stored in KZT internally, edited in user's display currency. */}
+                          {groupType==="expense"&&(
+                            <div style={{padding:"8px 0",marginBottom:6,borderBottom:`1px solid ${t.border}`}}>
+                              <div style={{fontSize:10,color:t.textMuted,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.4px",marginBottom:6}}>
+                                {tr("Monthly budget",settings.uiLanguage)} ({settings.selectedCurrency})
+                              </div>
+                              <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                                <input
+                                  type="number"
+                                  value={hasBudget?Math.round(budgetDisplay):""}
+                                  onChange={e=>{
+                                    const v=parseFloat(e.target.value);
+                                    const newBudgetKzt=v>0?toKZT(v,settings.selectedCurrency,settings.exchangeRates):null;
+                                    onCategoriesChange(categories.map(cat=>cat.id===c.id?{...cat,budgetKzt:newBudgetKzt}:cat));
+                                  }}
+                                  placeholder={tr("e.g., 40000 — leave empty for no budget",settings.uiLanguage)}
+                                  inputMode="decimal"
+                                  style={{flex:1,minWidth:0,background:t.bgCard,color:t.text,border:`1px solid ${t.border}`,borderRadius:7,padding:"8px 10px",fontSize:13,fontFamily:"monospace"}}
+                                />
+                                {hasBudget&&(
+                                  <button
+                                    onClick={()=>onCategoriesChange(categories.map(cat=>cat.id===c.id?{...cat,budgetKzt:null}:cat))}
+                                    style={{background:"transparent",border:`1px solid ${t.border}`,borderRadius:7,padding:"7px 11px",color:t.textMuted,cursor:"pointer",fontSize:11,fontFamily:"system-ui,sans-serif"}}>
+                                    {tr("Clear",settings.uiLanguage)}
+                                  </button>
+                                )}
+                              </div>
+                              <div style={{fontSize:10,color:t.textMuted,marginTop:6,fontStyle:"italic",lineHeight:1.4}}>
+                                {tr("Soft target. Tracked on Home with pace-aware coloring.",settings.uiLanguage)}
+                              </div>
+                            </div>
+                          )}
                           {subs.length===0&&(
                             <div style={{fontSize:11,color:t.textMuted,fontStyle:"italic",padding:"8px 4px"}}>No subcategories yet — add one below.</div>
                           )}
@@ -3663,7 +3937,7 @@ function App(){
         {tab==="home"&&<HomeScreen accounts={accounts} transactions={transactions} categories={categories} fixedExpenses={fixedExpenses} goals={goals} settings={settings} onSettingsChange={setSettings} onAddTxn={(mode)=>{setAddMode(mode);setAddModal(true);}} onGoalsChange={setGoals} onTabChange={setTab} t={t} onTxnClick={setSelTxn}/>}
         {tab==="analytics"&&<AnalyticsScreen transactions={transactions} categories={categories} settings={settings} t={t}/>}
         {tab==="history"&&<HistoryScreen transactions={transactions} accounts={accounts} categories={categories} settings={settings} onTxnClick={setSelTxn} t={t}/>}
-        {tab==="settings"&&<SettingsScreen accounts={accounts} categories={categories} fixedExpenses={fixedExpenses} goals={goals} settings={settings} onSettingsChange={setSettings} onAccountsChange={setAccounts} onCategoriesChange={setCategories} onFixedChange={setFixed} onGoalsChange={setGoals} onReset={handleReset} onRefreshRates={handleRefreshRates} onExport={handleExportCSV} t={t}/>}
+        {tab==="settings"&&<SettingsScreen accounts={accounts} categories={categories} fixedExpenses={fixedExpenses} goals={goals} transactions={transactions} settings={settings} onSettingsChange={setSettings} onAccountsChange={setAccounts} onCategoriesChange={setCategories} onFixedChange={setFixed} onGoalsChange={setGoals} onReset={handleReset} onRefreshRates={handleRefreshRates} onExport={handleExportCSV} t={t}/>}
       </div>
       <div style={{flexShrink:0,display:"flex",alignItems:"center",background:t.tabBg,borderTop:`1px solid ${t.tabBorder}`,padding:"6px 0 calc(10px + env(safe-area-inset-bottom, 0px))",zIndex:50}}>
         {TABS.map(({k,icon,label})=>{
