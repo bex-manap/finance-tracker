@@ -701,6 +701,10 @@ const TRANSLATIONS={
     "Other":"Другое",
     "Some transactions are set to 'Other'. Picking a real category helps your analytics.":"У некоторых транзакций категория «Другое». Выбор точной категории улучшит вашу аналитику.",
     "Nothing selected":"Ничего не выбрано","Import":"Импорт",
+    "Expense":"Расход","Income":"Доход","Transfer":"Перевод",
+    "From":"Откуда","to":"куда","To… (pick)":"Куда… (выберите)",
+    "Pick destination account, or change type to Expense / Income":"Выберите счёт-получатель или измените тип на Расход / Доход",
+    "transfer(s) need a destination account":"перевод(ов) без счёта-получателя",
     "Danger Zone":"Опасная зона","Reset All Data":"Сбросить все данные",
     "Add new account":"Новый счёт","Add new category":"Новая категория",
     "Tone":"Тон","Language":"Язык","Custom Prompt Prefix":"Дополнение к промпту",
@@ -834,6 +838,10 @@ const TRANSLATIONS={
     "Other":"Басқа",
     "Some transactions are set to 'Other'. Picking a real category helps your analytics.":"Кейбір транзакцияларда «Басқа» санаты тұр. Нақты санат таңдау аналитиканы жақсартады.",
     "Nothing selected":"Ештеңе таңдалмаған","Import":"Импорт",
+    "Expense":"Шығыс","Income":"Кіріс","Transfer":"Аударым",
+    "From":"Қайдан","to":"қайда","To… (pick)":"Қайда… (таңдаңыз)",
+    "Pick destination account, or change type to Expense / Income":"Қабылдаушы шотты таңдаңыз немесе түрін Шығыс / Кіріс деп өзгертіңіз",
+    "transfer(s) need a destination account":"аударым қабылдаушы шотсыз",
     "Danger Zone":"Қауіпті аймақ","Reset All Data":"Барлық деректерді өшіру",
     "Add new account":"Жаңа шот","Add new category":"Жаңа санат",
     "Tone":"Стиль","Language":"Тіл","Custom Prompt Prefix":"Промптқа қосымша",
@@ -2826,6 +2834,8 @@ function ImportReviewModal({transactions,setTransactions,categories,accounts,set
   const{selectedCurrency,exchangeRates}=settings;
 
   const selectedCount=transactions.filter(tx=>tx._selected).length;
+  // Transfers need a destination — block import until they all have one (or are deselected)
+  const incompleteTransfers=transactions.filter(tx=>tx._selected&&(tx._type||tx.type)==="transfer"&&!tx._toAccountId).length;
   const totalCount=transactions.length;
   const duplicateCount=transactions.filter(tx=>tx._isDuplicate).length;
 
@@ -2849,7 +2859,7 @@ function ImportReviewModal({transactions,setTransactions,categories,accounts,set
   return(
     <div style={{position:"fixed",inset:0,background:t.bg,zIndex:1000,display:"flex",flexDirection:"column"}}>
       {/* Header */}
-      <div style={{padding:"calc(env(safe-area-inset-top, 20px) + 16px) 16px 12px",background:t.bgCard,borderBottom:`1px solid ${t.border}`}}>
+      <div style={{padding:"calc(env(safe-area-inset-top, 20px) + 56px) 16px 12px",background:t.bgCard,borderBottom:`1px solid ${t.border}`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
           <div style={{fontSize:18,fontWeight:700,color:t.text}}>{tr("Review Import",lang)}</div>
           <button onClick={onCancel} style={{background:t.bgCard2,border:`1px solid ${t.border}`,borderRadius:"50%",width:32,height:32,color:t.textMuted,fontSize:16,cursor:"pointer"}}>×</button>
@@ -2876,62 +2886,144 @@ function ImportReviewModal({transactions,setTransactions,categories,accounts,set
           </div>
         )}
         {transactions.map(tx=>{
+          // The user-overridable type drives everything else: which accounts/category show up,
+          // colors, sign in front of the amount. AI's original type is just the starting point.
+          const effectiveType=tx._type||tx.type;
           const isOther=tx._categoryId==="other"||!expenseCats.find(c=>c.id===tx._categoryId);
           const dateStr=new Date(tx.date).toLocaleDateString("en-US",{month:"short",day:"numeric"});
+          const typeColor=effectiveType==="expense"?"#ef4444":effectiveType==="income"?"#10b981":"#3b82f6";
+          const typeSign=effectiveType==="expense"?"-":effectiveType==="income"?"+":"";
+          // For transfers, we need the user to pick a destination — flag the row as incomplete if missing
+          const transferMissingDest=effectiveType==="transfer"&&!tx._toAccountId;
           return(
             <div key={tx._id} style={{
               background:tx._selected?t.bgCard:t.bgCard2,
-              border:`1px solid ${tx._isDuplicate?"#f59e0b55":(tx._selected?t.border:"transparent")}`,
+              border:`1px solid ${
+                tx._isDuplicate?"#f59e0b55":
+                (tx._selected&&transferMissingDest?"#ef444455":
+                (tx._selected?t.border:"transparent"))
+              }`,
               borderRadius:12,
               padding:"12px",
               marginBottom:8,
               opacity:tx._selected?1:0.55,
               transition:"opacity .15s"
             }}>
-              {/* Header row: checkbox + date + amount + duplicate badge */}
-              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:tx._selected&&tx.type==="expense"?10:0}}>
+              {/* Header row: checkbox + description + amount */}
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:tx._selected?10:0}}>
                 <input type="checkbox" checked={tx._selected} onChange={()=>toggleSelect(tx._id)}
                   style={{width:18,height:18,cursor:"pointer",flexShrink:0,accentColor:"#10b981"}}/>
                 <div style={{flex:1,minWidth:0}}>
-                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
-                    <span style={{fontSize:13,fontWeight:600,color:t.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{tx.description||tr("(no description)",lang)}</span>
+                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2,flexWrap:"wrap"}}>
+                    <span style={{fontSize:13,fontWeight:600,color:t.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"100%"}}>{tx.description||tr("(no description)",lang)}</span>
                     {tx._isDuplicate&&<span style={{fontSize:9,background:"#f59e0b22",color:"#f59e0b",padding:"1px 6px",borderRadius:4,fontWeight:600,flexShrink:0}}>⚠ {tr("DUPLICATE",lang)}</span>}
                   </div>
                   <div style={{fontSize:11,color:t.textMuted}}>
-                    {dateStr} · <span style={{textTransform:"capitalize"}}>{tx.type}</span>
-                    {tx.confidence!==undefined&&tx.type==="expense"&&<span style={{marginLeft:6,opacity:0.7}}>· {Math.round(tx.confidence*100)}% {tr("confidence",lang)}</span>}
+                    {dateStr}
+                    {tx.confidence!==undefined&&effectiveType==="expense"&&<span style={{marginLeft:6,opacity:0.7}}>· {Math.round(tx.confidence*100)}% {tr("confidence",lang)}</span>}
                   </div>
                 </div>
                 <div style={{textAlign:"right",flexShrink:0}}>
-                  <div style={{fontSize:14,fontWeight:700,color:tx.type==="expense"?"#ef4444":tx.type==="income"?"#10b981":"#3b82f6",fontFamily:"monospace"}}>
-                    {tx.type==="expense"?"-":tx.type==="income"?"+":""}{fmtAmt(tx.amount,tx.currency||"KZT")}
+                  <div style={{fontSize:14,fontWeight:700,color:typeColor,fontFamily:"monospace"}}>
+                    {typeSign}{fmtAmt(tx.amount,tx.currency||"KZT")}
                   </div>
                 </div>
               </div>
 
-              {/* Category + account pickers — only shown for selected expense rows */}
               {tx._selected&&(
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,paddingLeft:28}}>
-                  {tx.type==="expense"&&(
-                    <select value={tx._categoryId} onChange={e=>updateField(tx._id,"_categoryId",e.target.value)}
-                      style={{
-                        background:isOther?"#f59e0b22":t.bgInput,
-                        color:t.text,
-                        border:`1px solid ${isOther?"#f59e0b55":t.border}`,
-                        borderRadius:8,padding:"7px 8px",fontSize:11,fontFamily:"system-ui,sans-serif",cursor:"pointer"
-                      }}>
-                      {expenseCats.map(c=>(
-                        <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+                <div style={{paddingLeft:28,display:"flex",flexDirection:"column",gap:6}}>
+                  {/* Type selector — three pills: Expense / Income / Transfer.
+                      Lets user reclassify when AI got it wrong (common for "Перевод" entries). */}
+                  <div style={{display:"flex",gap:4,background:t.bgInput,borderRadius:8,padding:3}}>
+                    {[
+                      {k:"expense",l:tr("Expense",lang),c:"#ef4444"},
+                      {k:"income", l:tr("Income",lang), c:"#10b981"},
+                      {k:"transfer",l:tr("Transfer",lang),c:"#3b82f6"}
+                    ].map(opt=>(
+                      <button key={opt.k}
+                        onClick={()=>updateField(tx._id,"_type",opt.k)}
+                        style={{
+                          flex:1,
+                          background:effectiveType===opt.k?opt.c:"transparent",
+                          color:effectiveType===opt.k?"#fff":t.textMuted,
+                          border:"none",
+                          borderRadius:6,
+                          padding:"5px 6px",
+                          fontSize:10,
+                          fontWeight:600,
+                          cursor:"pointer",
+                          fontFamily:"system-ui,sans-serif",
+                          transition:"all .15s"
+                        }}>
+                        {opt.l}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Different inputs depending on type */}
+                  {effectiveType==="expense"&&(
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                      <select value={tx._categoryId} onChange={e=>updateField(tx._id,"_categoryId",e.target.value)}
+                        style={{
+                          background:isOther?"#f59e0b22":t.bgInput,
+                          color:t.text,
+                          border:`1px solid ${isOther?"#f59e0b55":t.border}`,
+                          borderRadius:8,padding:"7px 8px",fontSize:11,fontFamily:"system-ui,sans-serif",cursor:"pointer"
+                        }}>
+                        {expenseCats.map(c=>(
+                          <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+                        ))}
+                        <option value="other">📂 {tr("Other",lang)}</option>
+                      </select>
+                      <select value={tx._accountId||""} onChange={e=>updateField(tx._id,"_accountId",e.target.value)}
+                        style={{background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"7px 8px",fontSize:11,fontFamily:"system-ui,sans-serif",cursor:"pointer"}}>
+                        {accounts.map(a=>(
+                          <option key={a.id} value={a.id}>{a.icon} {a.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {effectiveType==="income"&&(
+                    <select value={tx._accountId||""} onChange={e=>updateField(tx._id,"_accountId",e.target.value)}
+                      style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"7px 8px",fontSize:11,fontFamily:"system-ui,sans-serif",cursor:"pointer"}}>
+                      {accounts.map(a=>(
+                        <option key={a.id} value={a.id}>{a.icon} {a.name} ({tr("to",lang)})</option>
                       ))}
-                      <option value="other">📂 {tr("Other",lang)}</option>
                     </select>
                   )}
-                  <select value={tx._accountId||""} onChange={e=>updateField(tx._id,"_accountId",e.target.value)}
-                    style={{background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"7px 8px",fontSize:11,fontFamily:"system-ui,sans-serif",cursor:"pointer",gridColumn:tx.type!=="expense"?"1 / -1":undefined}}>
-                    {accounts.map(a=>(
-                      <option key={a.id} value={a.id}>{a.icon} {a.name}</option>
-                    ))}
-                  </select>
+
+                  {effectiveType==="transfer"&&(
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                      {/* From — receiving account from statement is now the source */}
+                      <select value={tx._accountId||""} onChange={e=>updateField(tx._id,"_accountId",e.target.value)}
+                        style={{background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"7px 8px",fontSize:11,fontFamily:"system-ui,sans-serif",cursor:"pointer"}}>
+                        <option value="" disabled>{tr("From",lang)}…</option>
+                        {accounts.map(a=>(
+                          <option key={a.id} value={a.id}>↗ {a.icon} {a.name}</option>
+                        ))}
+                      </select>
+                      {/* To — user must pick. Highlighted red if empty to draw attention */}
+                      <select value={tx._toAccountId||""} onChange={e=>updateField(tx._id,"_toAccountId",e.target.value)}
+                        style={{
+                          background:transferMissingDest?"#ef444422":t.bgInput,
+                          color:t.text,
+                          border:`1px solid ${transferMissingDest?"#ef444455":t.border}`,
+                          borderRadius:8,padding:"7px 8px",fontSize:11,fontFamily:"system-ui,sans-serif",cursor:"pointer"
+                        }}>
+                        <option value="">{tr("To… (pick)",lang)}</option>
+                        {accounts.filter(a=>a.id!==tx._accountId).map(a=>(
+                          <option key={a.id} value={a.id}>↙ {a.icon} {a.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {transferMissingDest&&(
+                    <div style={{fontSize:10,color:"#ef4444",fontStyle:"italic",lineHeight:1.5}}>
+                      ⚠ {tr("Pick destination account, or change type to Expense / Income",lang)}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -2946,19 +3038,24 @@ function ImportReviewModal({transactions,setTransactions,categories,accounts,set
 
       {/* Footer with confirm */}
       <div style={{padding:"12px 16px calc(12px + env(safe-area-inset-bottom, 0px))",background:t.bgCard,borderTop:`1px solid ${t.border}`}}>
+        {incompleteTransfers>0&&(
+          <div style={{fontSize:11,color:"#ef4444",marginBottom:8,textAlign:"center",fontStyle:"italic"}}>
+            ⚠ {incompleteTransfers} {tr("transfer(s) need a destination account",lang)}
+          </div>
+        )}
         <button
           onClick={onConfirm}
-          disabled={selectedCount===0}
+          disabled={selectedCount===0||incompleteTransfers>0}
           style={{
             width:"100%",
-            background:selectedCount===0?t.bgCard2:"#10b981",
-            color:selectedCount===0?t.textMuted:"#fff",
+            background:(selectedCount===0||incompleteTransfers>0)?t.bgCard2:"#10b981",
+            color:(selectedCount===0||incompleteTransfers>0)?t.textMuted:"#fff",
             border:"none",
             borderRadius:12,
             padding:"14px",
             fontSize:15,
             fontWeight:600,
-            cursor:selectedCount===0?"not-allowed":"pointer",
+            cursor:(selectedCount===0||incompleteTransfers>0)?"not-allowed":"pointer",
             fontFamily:"system-ui,sans-serif"
           }}>
           {selectedCount===0
@@ -3235,13 +3332,22 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
         setImportPhase("idle");
         return;
       }
-      // Augment each transaction with UI state for the review screen
+      // Augment each transaction with UI state for the review screen.
+      // Default the "from" account to whichever account matches the chosen bank's name —
+      // user picked "Freedom" so we try to find their Freedom account. Falls back to first account.
+      // For transfers, _toAccountId is the destination — user picks it after import is shown.
+      const bankNameLower=importBank.toLowerCase();
+      const matchedAccount=accounts.find(a=>a.name?.toLowerCase().includes(bankNameLower))
+        ||accounts.find(a=>a.isActive!==false)
+        ||accounts[0];
       const ready=data.transactions.map((tx,i)=>({
         ...tx,
         _id:"imp_"+i, // local-only key
         _selected:true, // default checked
+        _type:tx.type, // user can override AI's classification (e.g. "Перевод" might really be expense)
         _categoryId:tx.suggested_category_id||"other",
-        _accountId:accounts[0]?.id||null, // default to first account; user can change
+        _accountId:matchedAccount?.id||null,    // for income/expense: receiving/source account
+        _toAccountId:null,                       // for transfers: destination — user must pick
         // Duplicate detection: same direction, same absolute amount (±0.01), date within 1 day
         _isDuplicate:transactions.some(existing=>{
           if(existing.type!==tx.type)return false;
@@ -3262,21 +3368,33 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
     }
   };
 
-  // User taps Import — only the selected items go in, with their (possibly edited) category + account
+  // User taps Import — only the selected items go in, with their (possibly edited) type/category/account
   const handleConfirmImport=()=>{
     const toAdd=importTransactions
       .filter(tx=>tx._selected)
-      .map(tx=>({
-        id:uid(),
-        date:tx.date,
-        amount:tx.amount,
-        currency:tx.currency||"KZT",
-        type:tx.type,
-        accountId:tx._accountId,
-        categoryId:tx.type==="expense"?tx._categoryId:null,
-        note:tx.description||"",
-        aiComment:null
-      }));
+      .map(tx=>{
+        const type=tx._type||tx.type;
+        const base={
+          id:uid(),
+          date:tx.date,
+          amount:tx.amount,
+          currency:tx.currency||"KZT",
+          type,
+          accountId:tx._accountId,
+          note:tx.description||"",
+          aiComment:null
+        };
+        if(type==="expense"){
+          base.categoryId=tx._categoryId||"other";
+        }else if(type==="transfer"){
+          base.toAccountId=tx._toAccountId; // destination account
+          base.toAmount=tx.amount;          // same-currency transfer assumption for v1
+          base.toCurrency=tx.currency||"KZT";
+        }
+        return base;
+      })
+      // Drop transfers without destination — user didn't pick one, can't import
+      .filter(tx=>tx.type!=="transfer"||tx.toAccountId);
     if(toAdd.length===0){
       setImportPhase("idle");
       setImportTransactions([]);
