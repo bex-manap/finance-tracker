@@ -172,7 +172,8 @@ const haptic=(t="medium")=>{try{tg?.HapticFeedback?.impactOccurred(t);}catch{}};
 // Sends anonymous events to the Cloudflare Worker for the admin dashboard.
 // Only sends behavioral events (app opens, transactions created — count only, no amounts).
 // Each browser tab gets a unique session_id so we can compute session lengths.
-const TRACK_URL="https://finance-tracker-proxy.life-bekzat.workers.dev/track";
+const WORKER_URL="https://finance-tracker-proxy.life-bekzat.workers.dev";
+const TRACK_URL=WORKER_URL+"/track";
 const SESSION_ID=Math.random().toString(36).slice(2,12)+"-"+Date.now().toString(36);
 
 const track=(event_type,metadata={})=>{
@@ -686,6 +687,20 @@ const TRANSLATIONS={
     "Accounts":"Счета","Categories":"Категории","Fixed Expenses":"Постоянные расходы",
     "AI Coach Settings":"Настройки ИИ","Exchange Rates":"Курсы валют",
     "Export Data":"Экспорт данных","Download CSV":"Скачать CSV",
+    "Import Bank Statement":"Импорт выписки",
+    "Upload a PDF statement from Kaspi or Freedom Bank. AI extracts transactions; you review and import what you want.":"Загрузите PDF-выписку из Kaspi или Freedom Bank. ИИ извлечёт транзакции; вы проверяете и импортируете то, что нужно.",
+    "Choose PDF":"Выбрать PDF",
+    "Parsing... this may take 30-60 seconds":"Обрабатываем... до 60 секунд",
+    "Please upload a PDF file":"Загрузите PDF-файл",
+    "Your statement is sent to Anthropic AI for parsing. Anthropic does not train on API data.":"Выписка отправляется в Anthropic AI для обработки. Anthropic не обучается на данных API.",
+    "Review Import":"Проверка импорта",
+    "Found":"Найдено","transactions":"транзакций","possible duplicates":"возможных дубликатов",
+    "Select all":"Выбрать все","Deselect all":"Снять все","Skip duplicates":"Пропустить дубликаты",
+    "No transactions found in this PDF":"В этом PDF не найдено транзакций",
+    "(no description)":"(без описания)","DUPLICATE":"ДУБЛИКАТ","confidence":"уверенность",
+    "Other":"Другое",
+    "Some transactions are set to 'Other'. Picking a real category helps your analytics.":"У некоторых транзакций категория «Другое». Выбор точной категории улучшит вашу аналитику.",
+    "Nothing selected":"Ничего не выбрано","Import":"Импорт",
     "Danger Zone":"Опасная зона","Reset All Data":"Сбросить все данные",
     "Add new account":"Новый счёт","Add new category":"Новая категория",
     "Tone":"Тон","Language":"Язык","Custom Prompt Prefix":"Дополнение к промпту",
@@ -805,6 +820,20 @@ const TRANSLATIONS={
     "Accounts":"Шоттар","Categories":"Санаттар","Fixed Expenses":"Тұрақты шығындар",
     "AI Coach Settings":"ЖИ-баптаулары","Exchange Rates":"Бағамдар",
     "Export Data":"Деректерді экспорттау","Download CSV":"CSV жүктеу",
+    "Import Bank Statement":"Банк үзіндісін импорттау",
+    "Upload a PDF statement from Kaspi or Freedom Bank. AI extracts transactions; you review and import what you want.":"Kaspi немесе Freedom Bank-тен PDF үзіндіні жүктеңіз. ЖИ транзакцияларды табады; сіз тексеріп, керектерін импорттайсыз.",
+    "Choose PDF":"PDF таңдау",
+    "Parsing... this may take 30-60 seconds":"Өңделуде... 30-60 секунд",
+    "Please upload a PDF file":"PDF файлды жүктеңіз",
+    "Your statement is sent to Anthropic AI for parsing. Anthropic does not train on API data.":"Үзінді өңдеу үшін Anthropic ЖИ-ге жіберіледі. Anthropic API деректерінде үйрентпейді.",
+    "Review Import":"Импортты тексеру",
+    "Found":"Табылды","transactions":"транзакция","possible duplicates":"мүмкін қайталанулар",
+    "Select all":"Барлығын таңдау","Deselect all":"Барлығын алып тастау","Skip duplicates":"Қайталануларды өткізіп жіберу",
+    "No transactions found in this PDF":"Бұл PDF-те транзакциялар табылмады",
+    "(no description)":"(сипаттамасыз)","DUPLICATE":"ҚАЙТАЛАНУ","confidence":"сенімділік",
+    "Other":"Басқа",
+    "Some transactions are set to 'Other'. Picking a real category helps your analytics.":"Кейбір транзакцияларда «Басқа» санаты тұр. Нақты санат таңдау аналитиканы жақсартады.",
+    "Nothing selected":"Ештеңе таңдалмаған","Import":"Импорт",
     "Danger Zone":"Қауіпті аймақ","Reset All Data":"Барлық деректерді өшіру",
     "Add new account":"Жаңа шот","Add new category":"Жаңа санат",
     "Tone":"Стиль","Language":"Тіл","Custom Prompt Prefix":"Промптқа қосымша",
@@ -2786,6 +2815,161 @@ function HistoryScreen({transactions,accounts,categories,settings,onTxnClick,t})
 }
 
 // ── SETTINGS SCREEN ──
+// ── IMPORT REVIEW MODAL ──
+// Full-screen overlay listing every transaction the AI parsed. User can:
+//  - toggle individual selection
+//  - change category and account
+//  - bulk-select / bulk-deselect
+// Duplicates are flagged with a yellow badge and default to UNSELECTED so user opts in.
+function ImportReviewModal({transactions,setTransactions,categories,accounts,settings,t,onConfirm,onCancel}){
+  const lang=settings.uiLanguage||"English";
+  const{selectedCurrency,exchangeRates}=settings;
+
+  const selectedCount=transactions.filter(tx=>tx._selected).length;
+  const totalCount=transactions.length;
+  const duplicateCount=transactions.filter(tx=>tx._isDuplicate).length;
+
+  const toggleSelect=(id)=>{
+    setTransactions(txs=>txs.map(tx=>tx._id===id?{...tx,_selected:!tx._selected}:tx));
+  };
+  const updateField=(id,field,value)=>{
+    setTransactions(txs=>txs.map(tx=>tx._id===id?{...tx,[field]:value}:tx));
+  };
+  const selectAll=()=>setTransactions(txs=>txs.map(tx=>({...tx,_selected:true})));
+  const deselectAll=()=>setTransactions(txs=>txs.map(tx=>({...tx,_selected:false})));
+  const deselectDuplicates=()=>setTransactions(txs=>txs.map(tx=>tx._isDuplicate?{...tx,_selected:false}:tx));
+
+  // For "Apply category to all with this description" bulk action
+  const applyCatToSameDesc=(desc,catId)=>{
+    setTransactions(txs=>txs.map(tx=>(tx.type==="expense"&&tx.description===desc)?{...tx,_categoryId:catId}:tx));
+  };
+
+  const expenseCats=categories.filter(c=>c.type==="expense");
+
+  return(
+    <div style={{position:"fixed",inset:0,background:t.bg,zIndex:1000,display:"flex",flexDirection:"column"}}>
+      {/* Header */}
+      <div style={{padding:"calc(env(safe-area-inset-top, 20px) + 16px) 16px 12px",background:t.bgCard,borderBottom:`1px solid ${t.border}`}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <div style={{fontSize:18,fontWeight:700,color:t.text}}>{tr("Review Import",lang)}</div>
+          <button onClick={onCancel} style={{background:t.bgCard2,border:`1px solid ${t.border}`,borderRadius:"50%",width:32,height:32,color:t.textMuted,fontSize:16,cursor:"pointer"}}>×</button>
+        </div>
+        <div style={{fontSize:12,color:t.textMuted,lineHeight:1.5}}>
+          {tr("Found",lang)} <b style={{color:t.text}}>{totalCount}</b> {tr("transactions",lang)}
+          {duplicateCount>0&&<span> · <span style={{color:"#f59e0b"}}>{duplicateCount} {tr("possible duplicates",lang)}</span></span>}
+        </div>
+        {/* Bulk actions */}
+        <div style={{display:"flex",gap:6,marginTop:10,flexWrap:"wrap"}}>
+          <button onClick={selectAll} style={{background:t.bgCard2,border:`1px solid ${t.border}`,color:t.text,borderRadius:7,padding:"5px 10px",fontSize:11,cursor:"pointer",fontFamily:"system-ui,sans-serif"}}>☑ {tr("Select all",lang)}</button>
+          <button onClick={deselectAll} style={{background:t.bgCard2,border:`1px solid ${t.border}`,color:t.text,borderRadius:7,padding:"5px 10px",fontSize:11,cursor:"pointer",fontFamily:"system-ui,sans-serif"}}>☐ {tr("Deselect all",lang)}</button>
+          {duplicateCount>0&&(
+            <button onClick={deselectDuplicates} style={{background:"#f59e0b22",border:`1px solid #f59e0b55`,color:"#f59e0b",borderRadius:7,padding:"5px 10px",fontSize:11,cursor:"pointer",fontFamily:"system-ui,sans-serif"}}>⚠ {tr("Skip duplicates",lang)}</button>
+          )}
+        </div>
+      </div>
+
+      {/* Transaction list */}
+      <div style={{flex:1,overflow:"auto",padding:"10px 16px"}}>
+        {transactions.length===0&&(
+          <div style={{textAlign:"center",padding:"40px",color:t.textMuted,fontSize:13}}>
+            {tr("No transactions found in this PDF",lang)}
+          </div>
+        )}
+        {transactions.map(tx=>{
+          const isOther=tx._categoryId==="other"||!expenseCats.find(c=>c.id===tx._categoryId);
+          const dateStr=new Date(tx.date).toLocaleDateString("en-US",{month:"short",day:"numeric"});
+          return(
+            <div key={tx._id} style={{
+              background:tx._selected?t.bgCard:t.bgCard2,
+              border:`1px solid ${tx._isDuplicate?"#f59e0b55":(tx._selected?t.border:"transparent")}`,
+              borderRadius:12,
+              padding:"12px",
+              marginBottom:8,
+              opacity:tx._selected?1:0.55,
+              transition:"opacity .15s"
+            }}>
+              {/* Header row: checkbox + date + amount + duplicate badge */}
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:tx._selected&&tx.type==="expense"?10:0}}>
+                <input type="checkbox" checked={tx._selected} onChange={()=>toggleSelect(tx._id)}
+                  style={{width:18,height:18,cursor:"pointer",flexShrink:0,accentColor:"#10b981"}}/>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
+                    <span style={{fontSize:13,fontWeight:600,color:t.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{tx.description||tr("(no description)",lang)}</span>
+                    {tx._isDuplicate&&<span style={{fontSize:9,background:"#f59e0b22",color:"#f59e0b",padding:"1px 6px",borderRadius:4,fontWeight:600,flexShrink:0}}>⚠ {tr("DUPLICATE",lang)}</span>}
+                  </div>
+                  <div style={{fontSize:11,color:t.textMuted}}>
+                    {dateStr} · <span style={{textTransform:"capitalize"}}>{tx.type}</span>
+                    {tx.confidence!==undefined&&tx.type==="expense"&&<span style={{marginLeft:6,opacity:0.7}}>· {Math.round(tx.confidence*100)}% {tr("confidence",lang)}</span>}
+                  </div>
+                </div>
+                <div style={{textAlign:"right",flexShrink:0}}>
+                  <div style={{fontSize:14,fontWeight:700,color:tx.type==="expense"?"#ef4444":tx.type==="income"?"#10b981":"#3b82f6",fontFamily:"monospace"}}>
+                    {tx.type==="expense"?"-":tx.type==="income"?"+":""}{fmtAmt(tx.amount,tx.currency||"KZT")}
+                  </div>
+                </div>
+              </div>
+
+              {/* Category + account pickers — only shown for selected expense rows */}
+              {tx._selected&&(
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,paddingLeft:28}}>
+                  {tx.type==="expense"&&(
+                    <select value={tx._categoryId} onChange={e=>updateField(tx._id,"_categoryId",e.target.value)}
+                      style={{
+                        background:isOther?"#f59e0b22":t.bgInput,
+                        color:t.text,
+                        border:`1px solid ${isOther?"#f59e0b55":t.border}`,
+                        borderRadius:8,padding:"7px 8px",fontSize:11,fontFamily:"system-ui,sans-serif",cursor:"pointer"
+                      }}>
+                      {expenseCats.map(c=>(
+                        <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+                      ))}
+                      <option value="other">📂 {tr("Other",lang)}</option>
+                    </select>
+                  )}
+                  <select value={tx._accountId||""} onChange={e=>updateField(tx._id,"_accountId",e.target.value)}
+                    style={{background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"7px 8px",fontSize:11,fontFamily:"system-ui,sans-serif",cursor:"pointer",gridColumn:tx.type!=="expense"?"1 / -1":undefined}}>
+                    {accounts.map(a=>(
+                      <option key={a.id} value={a.id}>{a.icon} {a.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {transactions.some(tx=>tx._selected&&tx._categoryId==="other"&&tx.type==="expense")&&(
+          <div style={{padding:"10px 12px",background:"#f59e0b22",border:`1px solid #f59e0b55`,borderRadius:8,fontSize:11,color:"#f59e0b",lineHeight:1.5,marginTop:6}}>
+            💡 {tr("Some transactions are set to 'Other'. Picking a real category helps your analytics.",lang)}
+          </div>
+        )}
+      </div>
+
+      {/* Footer with confirm */}
+      <div style={{padding:"12px 16px calc(12px + env(safe-area-inset-bottom, 0px))",background:t.bgCard,borderTop:`1px solid ${t.border}`}}>
+        <button
+          onClick={onConfirm}
+          disabled={selectedCount===0}
+          style={{
+            width:"100%",
+            background:selectedCount===0?t.bgCard2:"#10b981",
+            color:selectedCount===0?t.textMuted:"#fff",
+            border:"none",
+            borderRadius:12,
+            padding:"14px",
+            fontSize:15,
+            fontWeight:600,
+            cursor:selectedCount===0?"not-allowed":"pointer",
+            fontFamily:"system-ui,sans-serif"
+          }}>
+          {selectedCount===0
+            ? tr("Nothing selected",lang)
+            : `${tr("Import",lang)} ${selectedCount} ${tr("transactions",lang)}`}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── FAQ DATA ──
 // Each entry is a question + answer pair. Both fields go through the translation system,
 // so tr() will pull the localized version if available, or fall back to English.
@@ -2978,7 +3162,7 @@ function BudgetSuggestionBanner({categories,transactions,settings,onCategoriesCh
   );
 }
 
-function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,settings,onSettingsChange,onAccountsChange,onCategoriesChange,onFixedChange,onGoalsChange,onReset,onRefreshRates,onExport,t}){
+function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,settings,onSettingsChange,onAccountsChange,onCategoriesChange,onFixedChange,onGoalsChange,onTransactionsChange,onReset,onRefreshRates,onExport,t}){
   const[sec,setSec]=useState(null);
   const[editAccId,setEditAccId]=useState(null);
   const[editAccName,setEditAccName]=useState("");
@@ -3000,6 +3184,110 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
   const[newGoalAmount,setNewGoalAmount]=useState("");
   const[newGoalDeadline,setNewGoalDeadline]=useState("");
   const[expandedGoalId,setExpandedGoalId]=useState(null); // which goal's contribution history is visible
+  // Bank statement import state — controls the flow from upload through review.
+  // 'idle' = no import in progress, 'uploading' = sending PDF to worker, 'reviewing' = showing review modal
+  const[importPhase,setImportPhase]=useState("idle");
+  const[importBank,setImportBank]=useState("kaspi"); // "kaspi" | "freedom"
+  const[importTransactions,setImportTransactions]=useState([]); // parsed transactions from AI
+  const[importError,setImportError]=useState(null);
+  const statementFileRef=useRef();
+
+  // Convert a File to base64 (just the data, no data: prefix)
+  const fileToBase64=(file)=>new Promise((resolve,reject)=>{
+    const r=new FileReader();
+    r.onload=()=>{
+      const result=r.result;
+      const i=result.indexOf(",");
+      resolve(i>=0?result.slice(i+1):result);
+    };
+    r.onerror=reject;
+    r.readAsDataURL(file);
+  });
+
+  // Triggered when user picks a PDF. Sends it to the worker, gets parsed transactions back.
+  const handleStatementUpload=async(e)=>{
+    const file=e.target.files?.[0];
+    if(!file)return;
+    if(file.type!=="application/pdf"){
+      setImportError(tr("Please upload a PDF file",settings.uiLanguage));
+      return;
+    }
+    setImportPhase("uploading");
+    setImportError(null);
+    try{
+      const pdf_base64=await fileToBase64(file);
+      // Build a category list for the parser. Only IDs and names — keeps prompt small.
+      const cats=categories.map(c=>({id:c.id,name:c.name,type:c.type,icon:c.icon}));
+      const res=await fetch(WORKER_URL+"/parse-statement",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          pdf_base64,
+          bank:importBank,
+          categories:cats,
+          ui_language:settings.uiLanguage,
+          tg_id:tg?.initDataUnsafe?.user?.id
+        })
+      });
+      const data=await res.json();
+      if(!data.ok){
+        setImportError(data.error||"Parsing failed");
+        setImportPhase("idle");
+        return;
+      }
+      // Augment each transaction with UI state for the review screen
+      const ready=data.transactions.map((tx,i)=>({
+        ...tx,
+        _id:"imp_"+i, // local-only key
+        _selected:true, // default checked
+        _categoryId:tx.suggested_category_id||"other",
+        _accountId:accounts[0]?.id||null, // default to first account; user can change
+        // Duplicate detection: same direction, same absolute amount (±0.01), date within 1 day
+        _isDuplicate:transactions.some(existing=>{
+          if(existing.type!==tx.type)return false;
+          if(Math.abs(existing.amount-tx.amount)>0.01)return false;
+          const dayDiff=Math.abs(new Date(existing.date)-new Date(tx.date))/86400000;
+          return dayDiff<=1;
+        })
+      }));
+      // Default-uncheck likely duplicates so user has to opt in
+      ready.forEach(tx=>{if(tx._isDuplicate)tx._selected=false;});
+      setImportTransactions(ready);
+      setImportPhase("reviewing");
+    }catch(err){
+      setImportError(err.message||"Upload failed");
+      setImportPhase("idle");
+    }finally{
+      if(statementFileRef.current)statementFileRef.current.value=""; // allow re-upload same file
+    }
+  };
+
+  // User taps Import — only the selected items go in, with their (possibly edited) category + account
+  const handleConfirmImport=()=>{
+    const toAdd=importTransactions
+      .filter(tx=>tx._selected)
+      .map(tx=>({
+        id:uid(),
+        date:tx.date,
+        amount:tx.amount,
+        currency:tx.currency||"KZT",
+        type:tx.type,
+        accountId:tx._accountId,
+        categoryId:tx.type==="expense"?tx._categoryId:null,
+        note:tx.description||"",
+        aiComment:null
+      }));
+    if(toAdd.length===0){
+      setImportPhase("idle");
+      setImportTransactions([]);
+      return;
+    }
+    // Prepend new transactions to existing list
+    onTransactionsChange([...toAdd,...transactions]);
+    setImportPhase("idle");
+    setImportTransactions([]);
+  };
+
   const[newFeAmt,setNewFeAmt]=useState("");
   const[newFeDay,setNewFeDay]=useState("1");
   const fileRef=useRef();
@@ -3444,6 +3732,78 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
             🔄 Refresh rates now
           </button>
         </div>
+      )}
+
+      {/* ─── BANK STATEMENT IMPORT ─── */}
+      {/* Upload a PDF bank statement, AI extracts transactions, user reviews, then imports. */}
+      <div style={{marginTop:16,marginBottom:12,padding:"16px",background:t.bgCard,borderRadius:12,border:`1px solid ${t.border}`}}>
+        <div style={{fontSize:13,fontWeight:600,color:t.textMuted,marginBottom:6}}>📥 {tr("Import Bank Statement",settings.uiLanguage)}</div>
+        <div style={{fontSize:11,color:t.textMuted,marginBottom:12,lineHeight:1.5}}>
+          {tr("Upload a PDF statement from Kaspi or Freedom Bank. AI extracts transactions; you review and import what you want.",settings.uiLanguage)}
+        </div>
+        {/* Bank picker */}
+        <div style={{display:"flex",gap:8,marginBottom:10}}>
+          {[{k:"kaspi",l:"Kaspi"},{k:"freedom",l:"Freedom"}].map(b=>(
+            <button key={b.k}
+              onClick={()=>setImportBank(b.k)}
+              style={{
+                flex:1,
+                background:importBank===b.k?"#10b981":t.bgCard2,
+                color:importBank===b.k?"#fff":t.text,
+                border:`1px solid ${importBank===b.k?"#10b981":t.border}`,
+                borderRadius:8,
+                padding:"10px",
+                fontSize:13,
+                fontWeight:600,
+                cursor:"pointer",
+                fontFamily:"system-ui,sans-serif"
+              }}>
+              {b.l}
+            </button>
+          ))}
+        </div>
+        <input ref={statementFileRef} type="file" accept="application/pdf" style={{display:"none"}} onChange={handleStatementUpload}/>
+        <button
+          onClick={()=>statementFileRef.current?.click()}
+          disabled={importPhase==="uploading"}
+          style={{
+            width:"100%",
+            background:importPhase==="uploading"?t.bgCard2:"transparent",
+            color:t.accent,
+            border:`1.5px solid ${t.accent}`,
+            borderRadius:10,
+            padding:"12px",
+            fontSize:14,
+            fontWeight:500,
+            cursor:importPhase==="uploading"?"wait":"pointer",
+            fontFamily:"system-ui,sans-serif"
+          }}>
+          {importPhase==="uploading"
+            ? "⏳ "+tr("Parsing... this may take 30-60 seconds",settings.uiLanguage)
+            : "📄 "+tr("Choose PDF",settings.uiLanguage)}
+        </button>
+        {importError&&(
+          <div style={{marginTop:8,padding:"8px 10px",background:"#ef444422",border:`1px solid #ef444455`,borderRadius:8,fontSize:11,color:"#ef4444"}}>
+            ⚠ {importError}
+          </div>
+        )}
+        <div style={{fontSize:10,color:t.textMuted,marginTop:8,textAlign:"center",lineHeight:1.5,fontStyle:"italic"}}>
+          {tr("Your statement is sent to Anthropic AI for parsing. Anthropic does not train on API data.",settings.uiLanguage)}
+        </div>
+      </div>
+
+      {/* Import review modal — opens after successful parse */}
+      {importPhase==="reviewing"&&(
+        <ImportReviewModal
+          transactions={importTransactions}
+          setTransactions={setImportTransactions}
+          categories={categories}
+          accounts={accounts}
+          settings={settings}
+          t={t}
+          onConfirm={handleConfirmImport}
+          onCancel={()=>{setImportPhase("idle");setImportTransactions([]);}}
+        />
       )}
 
       {/* Export — download a CSV of all transactions */}
@@ -4151,7 +4511,7 @@ function App(){
         {tab==="home"&&<HomeScreen accounts={accounts} transactions={transactions} categories={categories} fixedExpenses={fixedExpenses} goals={goals} settings={settings} onSettingsChange={setSettings} onAddTxn={(mode)=>{setAddMode(mode);setAddModal(true);}} onGoalsChange={setGoals} onTabChange={setTab} t={t} onTxnClick={setSelTxn}/>}
         {tab==="analytics"&&<AnalyticsScreen transactions={transactions} categories={categories} settings={settings} t={t}/>}
         {tab==="history"&&<HistoryScreen transactions={transactions} accounts={accounts} categories={categories} settings={settings} onTxnClick={setSelTxn} t={t}/>}
-        {tab==="settings"&&<SettingsScreen accounts={accounts} categories={categories} fixedExpenses={fixedExpenses} goals={goals} transactions={transactions} settings={settings} onSettingsChange={setSettings} onAccountsChange={setAccounts} onCategoriesChange={setCategories} onFixedChange={setFixed} onGoalsChange={setGoals} onReset={handleReset} onRefreshRates={handleRefreshRates} onExport={handleExportCSV} t={t}/>}
+        {tab==="settings"&&<SettingsScreen accounts={accounts} categories={categories} fixedExpenses={fixedExpenses} goals={goals} transactions={transactions} settings={settings} onSettingsChange={setSettings} onAccountsChange={setAccounts} onCategoriesChange={setCategories} onFixedChange={setFixed} onGoalsChange={setGoals} onTransactionsChange={setTransactions} onReset={handleReset} onRefreshRates={handleRefreshRates} onExport={handleExportCSV} t={t}/>}
       </div>
       <div style={{flexShrink:0,display:"flex",alignItems:"center",background:t.tabBg,borderTop:`1px solid ${t.tabBorder}`,padding:"6px 0 calc(10px + env(safe-area-inset-bottom, 0px))",zIndex:50}}>
         {TABS.map(({k,icon,label})=>{
