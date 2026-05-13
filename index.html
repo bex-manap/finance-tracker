@@ -2001,8 +2001,6 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,goals,settin
         {/* Goals — savings progress with comparisons */}
         {/* Budget Pulse — categories near/over budget, quiet when everything ok */}
         <BudgetPulseCard categories={categories} transactions={transactions} settings={settings} t={t} onTabChange={onTabChange}/>
-
-        <BudgetPulseCard categories={categories} transactions={transactions} settings={settings} t={t} onTabChange={onTabChange}/>
         <GoalsCard goals={goals} accounts={accounts} settings={settings} onGoalsChange={onGoalsChange} t={t}/>
 
         {/* Recent Transactions — last 10, grouped by date for easier scanning */}
