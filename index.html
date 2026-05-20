@@ -194,6 +194,28 @@ const tg = window.Telegram?.WebApp;
 const uid=()=>`${Date.now()}_${Math.random().toString(36).substr(2,5)}`;
 const MONTHS_FULL=["January","February","March","April","May","June","July","August","September","October","November","December"];
 const MONTHS_SHORT=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const MONTHS_FULL_RU=["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
+const MONTHS_SHORT_RU=["янв","фев","мар","апр","май","июн","июл","авг","сен","окт","ноя","дек"];
+const DAYS_SHORT_RU=["Вс","Пн","Вт","Ср","Чт","Пт","Сб"];
+const MONTHS_FULL_KK=["Қаңтар","Ақпан","Наурыз","Сәуір","Мамыр","Маусым","Шілде","Тамыз","Қыркүйек","Қазан","Қараша","Желтоқсан"];
+const MONTHS_SHORT_KK=["Қаң","Ақп","Нау","Сәу","Мам","Мау","Шіл","Там","Қыр","Қаз","Қар","Жел"];
+const DAYS_SHORT_KK=["Жс","Дс","Сс","Ср","Бс","Жм","Сн"];
+// Locale-aware date formatters. Manual arrays for Kazakh — kk-KZ has poor Telegram WebView support.
+const fmtGroupDate=(d,lang)=>{
+  if(lang==="Russian")return`${DAYS_SHORT_RU[d.getDay()]}, ${d.getDate()} ${MONTHS_SHORT_RU[d.getMonth()]}`;
+  if(lang==="Kazakh")return`${DAYS_SHORT_KK[d.getDay()]}, ${d.getDate()} ${MONTHS_SHORT_KK[d.getMonth()]}`;
+  return d.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
+};
+const fmtMonthDay=(d,lang)=>{
+  if(lang==="Russian")return`${d.getDate()} ${MONTHS_SHORT_RU[d.getMonth()]}`;
+  if(lang==="Kazakh")return`${d.getDate()} ${MONTHS_SHORT_KK[d.getMonth()]}`;
+  return d.toLocaleDateString("en-US",{month:"short",day:"numeric"});
+};
+const fmtMonthFull=(mon,year,lang)=>{
+  if(lang==="Russian")return`${MONTHS_FULL_RU[mon]} ${year}`;
+  if(lang==="Kazakh")return`${MONTHS_FULL_KK[mon]} ${year}`;
+  return`${MONTHS_FULL[mon]} ${year}`;
+};
 const sym={KZT:"₸",USD:"$",EUR:"€",USDT:"₮",BTC:"₿",ETH:"Ξ"};
 // Allowed transaction currencies per account type — bank accounts handle fiat,
 // crypto accounts handle stablecoins and major cryptos.
@@ -841,14 +863,23 @@ const TRANSLATIONS={
     "Save":"Сохранить","Cancel":"Отмена","Delete":"Удалить","Edit":"Изменить",
     "Skip":"Пропустить","Continue":"Далее","Back":"Назад",
     "Transfer ":"Перевод","Bank":"Банк","Crypto":"Крипто",
-    "ask pet":"спросить","hide":"скрыть"
+    "ask pet":"спросить","hide":"скрыть",
+    "Overview":"Обзор","Due:":"Срок:","of each month":"числа каждого месяца",
+    "This wk":"Эта нед.","Last wk":"Пр. нед.",
+    "Food":"Питание","Transport":"Транспорт","Housing":"Жильё","Entertainment":"Развлечения",
+    "Health":"Здоровье","Shopping":"Шопинг","Salary":"Зарплата","Loan":"Займ","Freelance":"Фриланс",
+    "Dining out":"Кафе/рестораны","Groceries":"Продукты","Coffee":"Кофе",
+    "Taxi":"Такси","Fuel":"Топливо","Transit":"Общ. транспорт",
+    "Rent":"Аренда","Utilities":"Коммуналка","Internet":"Интернет",
+    "Streaming":"Стриминг","Games":"Игры","Events":"Мероприятия",
+    "Pharmacy":"Аптека","Doctor":"Врач","Gym":"Спортзал","Clothes":"Одежда","Electronics":"Электроника"
   },
   Kazakh:{
     "Home":"Басты","Analytics":"Талдау","History":"Тарих","Settings":"Баптаулар",
     "Welcome back":"Қош келдіңіз","Total Balance":"Жалпы баланс",
     "Income":"Кіріс","Spent":"Жұмсалды","Saved":"Жинақталды","Net":"Таза",
     "+ Income":"+ Кіріс","- Expense":"− Шығыс","⇄ Transfer":"⇄ Аударым",
-    "My Accounts":"Менің шоттарым","Recent Transactions":"Соңғы операциялар",
+    "My Accounts":"Шоттарым","Recent Transactions":"Соңғы операциялар",
     "Good morning":"Қайырлы таң","Good afternoon":"Қайырлы күн","Good evening":"Қайырлы кеш","Good night":"Қайырлы түн",
     "day streak":"күн қатарынан","Streak":"Серия","Best ever":"Үздік","days":"күн",
     "How streaks work":"Серия қалай жұмыс істейді",
@@ -963,7 +994,7 @@ const TRANSLATIONS={
     "This is a virtual reservation — your account balances stay the same. It only tracks your intent to save toward this goal.":"Бұл виртуалды резерв — шот баланстары өзгермейді. Тек қана сіздің жинақтау ниетіңізді есепке алады.",
     "entry":"жазба","entries":"жазба","Delete this contribution?":"Бұл толықтыруды жою керек пе?",
     "No contributions yet. Tap the goal on Home to contribute.":"Әзірше толықтырулар жоқ. Толықтыру үшін басты беттегі мақсатқа басыңыз.",
-    "My Progress":"Менің прогресс","Weeks":"Апталар","Months":"Айлар","weeks":"апта","months":"ай",
+    "My Progress":"Прогресс","Weeks":"Апталар","Months":"Айлар","weeks":"апта","months":"ай",
     "By category":"Санат бойынша","Saved":"Үнемделді","Uncategorized":"Санатсыз",
     "Not enough data yet for this period range. Log some transactions and check back later!":"Бұл кезең үшін деректер әлі жеткіліксіз. Бірнеше транзакция жазыңыз және кейінірек тексеріңіз!",
     "Saved = income − expenses for the period. Amounts converted to your selected currency at today's exchange rates.":"Үнемделді = кезеңдегі кірістер − шығыстар. Сомалар бүгінгі бағам бойынша таңдалған валютаға айырбасталған.",
@@ -976,7 +1007,16 @@ const TRANSLATIONS={
     "Save":"Сақтау","Cancel":"Болдырмау","Delete":"Жою","Edit":"Өзгерту",
     "Skip":"Өткізу","Continue":"Жалғастыру","Back":"Артқа",
     "Bank":"Банк","Crypto":"Крипто",
-    "ask pet":"сұрау","hide":"жасыру"
+    "ask pet":"сұрау","hide":"жасыру",
+    "Overview":"Шолу","Due:":"Мерзімі:","of each month":"ай сайын",
+    "This wk":"Осы апта","Last wk":"Өткен апта",
+    "Food":"Тамақ","Transport":"Көлік","Housing":"Тұрғын үй","Entertainment":"Ойын-сауық",
+    "Health":"Денсаулық","Shopping":"Сауда","Salary":"Жалақы","Loan":"Қарыз","Freelance":"Фриланс",
+    "Dining out":"Сырттан тамақтану","Groceries":"Азық-түлік","Coffee":"Кофе",
+    "Taxi":"Такси","Fuel":"Жанармай","Transit":"Қоғамдық көлік",
+    "Rent":"Жалдау","Utilities":"Коммуналдық","Internet":"Интернет",
+    "Streaming":"Стриминг","Games":"Ойындар","Events":"Іс-шаралар",
+    "Pharmacy":"Дәріхана","Doctor":"Дәрігер","Gym":"Спортзал","Clothes":"Киім","Electronics":"Электроника"
   }
 };
 // Translation function: returns translated string or falls back to the original English
@@ -1415,11 +1455,18 @@ function TxnDetail({txn,open,onClose,accounts,categories,onDelete,settings,t}){
   const sub=cat?.subcategories?.find(s=>s.id===txn.subcategoryId);
   const color=txn.type==="expense"?"#ef4444":txn.type==="income"?"#10b981":"#3b82f6";
   const sign=txn.type==="expense"?"-":txn.type==="income"?"+":"";
+  const lang=settings?.uiLanguage||"English";
+  const dd=new Date(txn.date);
+  const txnDateStr=lang==="Russian"
+    ?`${DAYS_SHORT_RU[dd.getDay()]}, ${dd.getDate()} ${MONTHS_SHORT_RU[dd.getMonth()]} ${dd.getFullYear()} · ${fmtTime(txn.date)}`
+    :lang==="Kazakh"
+    ?`${DAYS_SHORT_KK[dd.getDay()]}, ${dd.getDate()} ${MONTHS_SHORT_KK[dd.getMonth()]} ${dd.getFullYear()} · ${fmtTime(txn.date)}`
+    :`${dd.toLocaleDateString("en-US",{weekday:"short",year:"numeric",month:"short",day:"numeric"})} · ${fmtTime(txn.date)}`;
   const rows=[
     {l:"Account",v:`${acc?.icon||""} ${acc?.name||"Unknown"}`},
     toAcc?{l:"To Account",v:`${toAcc.icon} ${toAcc.name}`}:null,
-    {l:"Type",v:txn.type.charAt(0).toUpperCase()+txn.type.slice(1)},
-    {l:"Date",v:`${new Date(txn.date).toLocaleDateString("en-US",{weekday:"short",year:"numeric",month:"short",day:"numeric"})} · ${fmtTime(txn.date)}`},
+    {l:"Type",v:tr(txn.type.charAt(0).toUpperCase()+txn.type.slice(1),lang)},
+    {l:"Date",v:txnDateStr},
     txn.note?{l:"Note",v:txn.note}:null,
   ].filter(Boolean);
   return(
@@ -1428,11 +1475,11 @@ function TxnDetail({txn,open,onClose,accounts,categories,onDelete,settings,t}){
         <div style={{textAlign:"center",padding:"16px 0"}}>
           <div style={{fontSize:42,marginBottom:8}}>{cat?.icon||"💸"}</div>
           <div style={{fontSize:32,fontWeight:700,color,fontFamily:"system-ui,sans-serif"}}>{sign}{fmtFull(txn.amount,txn.currency)}</div>
-          <div style={{fontSize:15,color:t.textMuted,marginTop:4}}>{cat?.name}{sub?` · ${sub.name}`:""}</div>
+          <div style={{fontSize:15,color:t.textMuted,marginTop:4}}>{cat?tr(cat.name,lang):""}{sub?` · ${tr(sub.name,lang)}`:""}</div>
         </div>
         {rows.map(({l,v})=>(
           <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"10px 0",borderBottom:`1px solid ${t.border}`}}>
-            <span style={{color:t.textMuted,fontSize:14}}>{l}</span>
+            <span style={{color:t.textMuted,fontSize:14}}>{tr(l,lang)}</span>
             <span style={{color:t.text,fontSize:14,fontWeight:500,textAlign:"right",maxWidth:"60%"}}>{v}</span>
           </div>
         ))}
@@ -1548,7 +1595,7 @@ function BudgetPulseCard({categories,transactions,settings,t,onTabChange}){
                 <div style={{fontSize:20}}>{cat.icon}</div>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
-                    <div style={{fontSize:14,fontWeight:600,color:t.text}}>{cat.name}</div>
+                    <div style={{fontSize:14,fontWeight:600,color:t.text}}>{tr(cat.name,lang)}</div>
                     <div style={{fontSize:11,fontWeight:600,color:info.color,background:info.bg,padding:"2px 7px",borderRadius:8,whiteSpace:"nowrap"}}>{info.label}</div>
                   </div>
                   <div style={{fontSize:11,color:t.textMuted,marginTop:2,fontFamily:"monospace"}}>
@@ -1985,7 +2032,7 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,goals,settin
           dateKey:key,
           dateObj:d,
           // "Mon, Apr 10" style — matches the History screen
-          label:d.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}),
+          label:fmtGroupDate(d,settings.uiLanguage||"English"),
           items:[],
           incomeKzt:0,
           expenseKzt:0
@@ -1998,7 +2045,7 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,goals,settin
     });
     // Maintain newest-first order based on the most recent transaction's date
     return Object.values(groups).sort((a,b)=>b.dateObj-a.dateObj);
-  },[recentTxns,exchangeRates]);
+  },[recentTxns,exchangeRates,settings.uiLanguage]);
 
   return(
     <div style={{height:"100%",overflow:"auto",paddingBottom:16}}>
@@ -2158,7 +2205,7 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,goals,settin
                 <div key={fe.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px",borderBottom:i<upcomingFixed.length-1?`1px solid ${t.border}`:"none"}}>
                   <div>
                     <div style={{fontSize:14,color:t.text,fontWeight:500}}>{fe.name}</div>
-                    <div style={{fontSize:11,color:t.textMuted}}>Due: {fe.dayOfMonth}th of month</div>
+                    <div style={{fontSize:11,color:t.textMuted}}>{tr("Due:",settings.uiLanguage)} {fe.dayOfMonth}{settings.uiLanguage==="English"?(fe.dayOfMonth===1?"st":fe.dayOfMonth===2?"nd":fe.dayOfMonth===3?"rd":"th"):""} {tr("of each month",settings.uiLanguage)}</div>
                   </div>
                   <div style={{fontSize:14,fontWeight:700,color:"#ef4444",fontFamily:"monospace"}}>-{fmtAmt(fe.amount,fe.currency)}</div>
                 </div>
@@ -2229,11 +2276,11 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,goals,settin
                                 <div style={{fontSize:14,fontWeight:500,color:t.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
                                   {isTransfer?(
                                     <span>{acc?.name||"?"} <span style={{color:t.textMuted}}>→</span> {toAcc?.name||"?"}</span>
-                                  ):(cat?.name||"Unknown")}
+                                  ):(cat?tr(cat.name,settings.uiLanguage):"Unknown")}
                                 </div>
                                 {/* Date is now shown in the group header, so omit it from the row to reduce noise */}
                                 <div style={{fontSize:11,color:t.textMuted}}>
-                                  {fmtTime(txn.date)} · {isTransfer?"Transfer":(acc?.name||"")}{txn.note?` · ${txn.note}`:""}
+                                  {fmtTime(txn.date)} · {isTransfer?tr("Transfer",settings.uiLanguage):(acc?.name||"")}{txn.note?` · ${txn.note}`:""}
                                 </div>
                               </div>
                             </div>
@@ -2440,7 +2487,7 @@ function AnalyticsScreen({transactions,categories,settings,t}){
     filtered.forEach(tx=>{
       const cat=categories.find(c=>c.id===tx.categoryId);
       const key=cat?.id||"other";
-      if(!bycat[key])bycat[key]={name:cat?.name||"Other",icon:cat?.icon||"❓",color:cat?.color||"#64748b",value:0};
+      if(!bycat[key])bycat[key]={name:cat?tr(cat.name,settings.uiLanguage):tr("Other",settings.uiLanguage),icon:cat?.icon||"❓",color:cat?.color||"#64748b",value:0};
       bycat[key].value+=toKZT(tx.amount,tx.currency,exchangeRates);
     });
     return{
@@ -2449,7 +2496,7 @@ function AnalyticsScreen({transactions,categories,settings,t}){
       totalInc:incomeKzt,
       txnCount:filtered.length
     };
-  },[transactions,categories,exchangeRates,pieFromDate,pieToDate]);
+  },[transactions,categories,exchangeRates,pieFromDate,pieToDate,settings.uiLanguage]);
 
   // ─ Calendar data: per-day expense totals for the selected calendar month ─
   const daysInMonth=new Date(calYear,calMonth+1,0).getDate();
@@ -2467,9 +2514,9 @@ function AnalyticsScreen({transactions,categories,settings,t}){
   const presets=[
     {k:"last7",l:"7d"},
     {k:"last30",l:"30d"},
-    {k:"thisMonth",l:"This month"},
-    {k:"lastMonth",l:"Last month"},
-    {k:"thisYear",l:"Year"}
+    {k:"thisMonth",l:tr("This month",settings.uiLanguage)},
+    {k:"lastMonth",l:tr("Last month",settings.uiLanguage)},
+    {k:"thisYear",l:tr("Year",settings.uiLanguage)}
   ];
 
   // ─ MY PROGRESS: build the period comparison data ─
@@ -2486,7 +2533,12 @@ function AnalyticsScreen({transactions,categories,settings,t}){
         const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
         const start = new Date(d.getFullYear(), d.getMonth(), 1);
         const end = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59);
-        const label = d.toLocaleDateString("en-US", {month:"short", year: i === 0 ? undefined : "2-digit"});
+        const lang=settings.uiLanguage||"English";
+        const label = i===0
+          ?(lang==="Russian"?MONTHS_SHORT_RU[d.getMonth()]:lang==="Kazakh"?MONTHS_SHORT_KK[d.getMonth()]:MONTHS_SHORT[d.getMonth()])
+          :(lang==="Russian"?`${MONTHS_SHORT_RU[d.getMonth()]} '${String(d.getFullYear()).slice(2)}`:
+            lang==="Kazakh"?`${MONTHS_SHORT_KK[d.getMonth()]} '${String(d.getFullYear()).slice(2)}`:
+            d.toLocaleDateString("en-US",{month:"short",year:"2-digit"}));
         list.push({start, end, label});
       }
     } else {
@@ -2497,12 +2549,13 @@ function AnalyticsScreen({transactions,categories,settings,t}){
       for(let i = periodCount - 1; i >= 0; i--){
         const start = new Date(thisMon.getFullYear(), thisMon.getMonth(), thisMon.getDate() - i*7);
         const end   = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6, 23, 59, 59);
-        const label = i === 0 ? "This wk" : i === 1 ? "Last wk" : `${start.toLocaleDateString("en-US",{month:"short",day:"numeric"})}`;
+        const lang=settings.uiLanguage||"English";
+        const label = i === 0 ? tr("This wk",lang) : i === 1 ? tr("Last wk",lang) : fmtMonthDay(start,lang);
         list.push({start, end, label});
       }
     }
     return list;
-  }, [periodMode, periodCount]);
+  }, [periodMode, periodCount, settings.uiLanguage]);
 
   // Compute totals + category breakdown per period
   const periodStats = useMemo(()=>{
@@ -2545,7 +2598,7 @@ function AnalyticsScreen({transactions,categories,settings,t}){
       .slice(0, 5)
       .map(([cid])=>{
         const cat = categories.find(c=>c.id===cid);
-        return { id: cid, name: cat?.name || tr("Uncategorized", settings.uiLanguage), icon: cat?.icon || "📂" };
+        return { id: cid, name: cat?.name ? tr(cat.name, settings.uiLanguage) : tr("Uncategorized", settings.uiLanguage), icon: cat?.icon || "📂" };
       });
   }, [periodStats, categories, settings.uiLanguage]);
 
@@ -2597,7 +2650,7 @@ function AnalyticsScreen({transactions,categories,settings,t}){
 
       {/* ─────── Pie Chart card with own date range ─────── */}
       <div style={{background:t.bgCard,borderRadius:16,padding:"16px",border:`1px solid ${t.border}`,marginBottom:16}}>
-        <div style={{fontSize:15,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif",marginBottom:10}}>Spending by Category</div>
+        <div style={{fontSize:15,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif",marginBottom:10}}>{tr("Spending by Category",settings.uiLanguage)}</div>
 
         {/* Quick preset chips */}
         <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
@@ -2618,9 +2671,9 @@ function AnalyticsScreen({transactions,categories,settings,t}){
         {/* Summary numbers for the selected range */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
           {[
-            {l:"Income",v:pieRangeData.totalInc,c:"#10b981"},
-            {l:"Spent",v:pieRangeData.totalExp,c:"#ef4444"},
-            {l:"Net",v:pieRangeData.totalInc-pieRangeData.totalExp,c:"#3b82f6"}
+            {l:tr("Income",settings.uiLanguage),v:pieRangeData.totalInc,c:"#10b981"},
+            {l:tr("Spent",settings.uiLanguage),v:pieRangeData.totalExp,c:"#ef4444"},
+            {l:tr("Net",settings.uiLanguage),v:pieRangeData.totalInc-pieRangeData.totalExp,c:"#3b82f6"}
           ].map(({l,v,c})=>(
             <div key={l} style={{background:t.bgInput,borderRadius:8,padding:"8px 6px",textAlign:"center"}}>
               <div style={{fontSize:10,color:t.textMuted,marginBottom:2}}>{l}</div>
@@ -2656,7 +2709,7 @@ function AnalyticsScreen({transactions,categories,settings,t}){
         ):(
           <div style={{textAlign:"center",padding:"32px 16px",color:t.textMuted}}>
             <div style={{fontSize:32,marginBottom:8}}>📊</div>
-            No expenses in this range
+            {tr("No expenses in this range",settings.uiLanguage)}
           </div>
         )}
       </div>
@@ -2664,12 +2717,12 @@ function AnalyticsScreen({transactions,categories,settings,t}){
       {/* ─────── Calendar card with own month navigation ─────── */}
       <div style={{background:t.bgCard,borderRadius:16,padding:"16px",border:`1px solid ${t.border}`}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-          <div style={{fontSize:15,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif"}}>Daily Spending</div>
+          <div style={{fontSize:15,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif"}}>{tr("Daily Spending",settings.uiLanguage)}</div>
           <div style={{fontSize:12,color:t.textMuted,fontFamily:"monospace"}}>{fmtAmt(fromKZT(calMonthTotal,selectedCurrency,exchangeRates),selectedCurrency)}</div>
         </div>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,background:t.bgInput,borderRadius:10,padding:"6px 12px"}}>
           <button onClick={prevCalMonth} style={{background:"none",border:"none",color:t.accent,fontSize:18,cursor:"pointer",padding:"2px 6px"}}>‹</button>
-          <span style={{fontSize:13,fontWeight:600,color:t.text}}>{MONTHS_FULL[calMonth]} {calYear}</span>
+          <span style={{fontSize:13,fontWeight:600,color:t.text}}>{fmtMonthFull(calMonth,calYear,settings.uiLanguage)}</span>
           <button onClick={nextCalMonth} style={{background:"none",border:"none",color:t.accent,fontSize:18,cursor:"pointer",padding:"2px 6px"}}>›</button>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
@@ -2886,26 +2939,26 @@ function HistoryScreen({transactions,accounts,categories,settings,onTxnClick,t})
     monthTxns.forEach(txn=>{
       const d=new Date(txn.date);
       const key=`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-      if(!g[key])g[key]={label:d.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}),txns:[],total:0};
+      if(!g[key])g[key]={label:fmtGroupDate(d,settings.uiLanguage||"English"),txns:[],total:0};
       g[key].txns.push(txn);
       if(txn.type==="expense")g[key].total-=toKZT(txn.amount,txn.currency,exchangeRates);
       else if(txn.type==="income")g[key].total+=toKZT(txn.amount,txn.currency,exchangeRates);
     });
     return Object.values(g);
-  },[monthTxns,exchangeRates]);
+  },[monthTxns,exchangeRates,settings.uiLanguage]);
 
   return(
     <div style={{height:"100%",overflow:"auto",padding:"calc(env(safe-area-inset-top, 20px) + 48px) 16px 16px"}}>
       <div style={{fontFamily:"system-ui,sans-serif",fontSize:22,fontWeight:700,color:t.text,marginBottom:16}}>{tr("History",settings.uiLanguage)}</div>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,background:t.bgCard,borderRadius:12,padding:"10px 16px",border:`1px solid ${t.border}`}}>
         <button onClick={prevMonth} style={{background:"none",border:"none",color:t.accent,fontSize:22,cursor:"pointer",padding:"0 6px"}}>‹</button>
-        <span style={{fontSize:16,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif"}}>{MONTHS_FULL[selMonth]} {selYear}</span>
+        <span style={{fontSize:16,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif"}}>{fmtMonthFull(selMonth,selYear,settings.uiLanguage)}</span>
         <button onClick={nextMonth} style={{background:"none",border:"none",color:t.accent,fontSize:22,cursor:"pointer",padding:"0 6px"}}>›</button>
       </div>
       {grouped.length===0&&(
         <div style={{textAlign:"center",padding:"48px 0",color:t.textMuted}}>
           <div style={{fontSize:36,marginBottom:8}}>📭</div>
-          <div style={{fontSize:15}}>No transactions this month</div>
+          <div style={{fontSize:15}}>{tr("No transactions this month",settings.uiLanguage)}</div>
         </div>
       )}
       <div style={{display:"flex",flexDirection:"column",gap:16}}>
@@ -2934,7 +2987,7 @@ function HistoryScreen({transactions,accounts,categories,settings,onTxnClick,t})
                           <div style={{fontSize:14,fontWeight:500,color:t.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
                             {isTransfer?(
                               <span>{acc?.name||"?"} <span style={{color:t.textMuted}}>→</span> {toAcc?.name||"?"}</span>
-                            ):(sub?sub.name:cat?.name)||"Unknown"}
+                            ):(sub?tr(sub.name,settings.uiLanguage):cat?tr(cat.name,settings.uiLanguage):"Unknown")}
                           </div>
                           <div style={{fontSize:11,color:t.textMuted}}>{fmtTime(txn.date)}{!isTransfer?` · ${acc?.name}`:""}{txn.note?` · ${txn.note.slice(0,22)}${txn.note.length>22?"…":""}`:""}</div>
                         </div>
@@ -3026,7 +3079,7 @@ function ImportReviewModal({transactions,setTransactions,categories,accounts,set
           // colors, sign in front of the amount. AI's original type is just the starting point.
           const effectiveType=tx._type||tx.type;
           const isOther=tx._categoryId==="other"||!expenseCats.find(c=>c.id===tx._categoryId);
-          const dateStr=new Date(tx.date).toLocaleDateString("en-US",{month:"short",day:"numeric"});
+          const dateStr=fmtMonthDay(new Date(tx.date),settings.uiLanguage);
           const typeColor=effectiveType==="expense"?"#ef4444":effectiveType==="income"?"#10b981":"#3b82f6";
           const typeSign=effectiveType==="expense"?"-":effectiveType==="income"?"+":"";
           // For transfers, we need the user to pick a destination — flag the row as incomplete if missing
@@ -3832,7 +3885,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
                     <div style={{fontSize:14,color:t.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{g.name}</div>
                     <div style={{fontSize:11,color:t.textMuted,fontFamily:"monospace"}}>
                       {fmtAmt(savedDisplay,settings.selectedCurrency)} / {fmtAmt(targetDisplay,settings.selectedCurrency)}
-                      {g.deadline&&<span> · {new Date(g.deadline).toLocaleDateString("en-US",{month:"short",day:"numeric"})}</span>}
+                      {g.deadline&&<span> · {fmtMonthDay(new Date(g.deadline),settings.uiLanguage)}</span>}
                     </div>
                   </div>
                   <span style={{fontSize:10,color:t.textMuted,marginRight:4}}>{contributions.length} {contributions.length===1?tr("entry",settings.uiLanguage):tr("entries",settings.uiLanguage)}</span>
@@ -3850,7 +3903,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
                         <div style={{flex:1,minWidth:0}}>
                           <div style={{color:t.text,fontFamily:"monospace",fontWeight:600}}>+{fmtAmt(c.amount,c.currency)}</div>
                           <div style={{color:t.textMuted,fontSize:10}}>
-                            {new Date(c.date).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}
+                            {fmtMonthDay(new Date(c.date),settings.uiLanguage)}, {new Date(c.date).getFullYear()}
                             {c.accountId&&accounts.find(a=>a.id===c.accountId)&&` · ${accounts.find(a=>a.id===c.accountId).name}`}
                             {c.note&&` · ${c.note}`}
                           </div>
