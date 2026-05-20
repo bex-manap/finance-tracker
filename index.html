@@ -96,6 +96,20 @@ input[type=date]{
 .pet-dollar-1{animation:dollarOrbit1 6s ease-out infinite;animation-delay:0s;}
 .pet-dollar-2{animation:dollarOrbit2 6s ease-out infinite;animation-delay:2s;}
 .pet-dollar-3{animation:dollarOrbit3 6s ease-out infinite;animation-delay:4s;}
+@keyframes petBounce{
+  0%,100%{transform:scale(1) translateY(0);}
+  25%{transform:scale(1.18) translateY(-7px);}
+  55%{transform:scale(0.94) translateY(2px);}
+}
+.pet-bouncing{animation:petBounce 0.45s cubic-bezier(.36,.07,.19,.97);}
+@keyframes quoteSlideIn{
+  0%{opacity:0;transform:translateY(-6px);}
+  100%{opacity:1;transform:translateY(0);}
+}
+@keyframes quoteFadeOut{
+  0%{opacity:1;transform:translateY(0);}
+  100%{opacity:0;transform:translateY(-4px);}
+}
 </style>
 <!-- Lottie player for animated pet on Home. ~75KB minified, loaded once and cached. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/bodymovin/5.12.2/lottie.min.js"></script>
@@ -1902,6 +1916,22 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,goals,settin
   const quoteList=useMemo(()=>getQuotes(settings.uiLanguage),[settings.uiLanguage]);
   const quoteIdx=useMemo(()=>Math.floor(Date.now()/86400000)%quoteList.length,[quoteList.length]);
   const quote=quoteList[quoteIdx];
+  const [petQuoteVisible,setPetQuoteVisible]=useState(false);
+  const [petQuoteFading,setPetQuoteFading]=useState(false);
+  const [petBouncing,setPetBouncing]=useState(false);
+  const petQuoteTimer=useRef(null);
+  const closePetQuote=()=>{
+    clearTimeout(petQuoteTimer.current);
+    setPetQuoteFading(true);
+    setTimeout(()=>{setPetQuoteVisible(false);setPetQuoteFading(false);},280);
+  };
+  const handlePetTap=()=>{
+    haptic();
+    setPetBouncing(true);
+    setTimeout(()=>setPetBouncing(false),450);
+    if(petQuoteVisible){closePetQuote();}
+    else{setPetQuoteVisible(true);petQuoteTimer.current=setTimeout(closePetQuote,6000);}
+  };
   const currencies=settings.activeCurrencies||["KZT","USD","EUR","USDT"];
   const cycleCur=()=>{const i=currencies.indexOf(selectedCurrency);onSettingsChange({...settings,selectedCurrency:currencies[(i+1)%currencies.length]});};
   const totalKZT=accounts.reduce((s,a)=>s+toKZT(a.balance,a.currency,exchangeRates),0);
@@ -2005,10 +2035,12 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,goals,settin
         {/* ─── HERO BALANCE CARD ─── */}
         {/* Animated pet on the left (Lottie), balance info on the right.
             On narrow screens (Telegram mini app is ~370px) the pet at 80px leaves ~270px for content. */}
-        <div style={{background:t.bgCard,border:`1px solid ${t.border}`,borderRadius:18,padding:"16px",marginBottom:14,position:"relative",overflow:"hidden",display:"flex",gap:12,alignItems:"flex-start"}}>
+        <div style={{background:t.bgCard,border:`1px solid ${t.border}`,borderRadius:18,padding:"16px",marginBottom:14,position:"relative",overflow:"visible",display:"flex",gap:12,alignItems:"center"}}>
 
-          {/* Pet — sits flush-left, slightly offset to give the dollar signs room to float up */}
-          <PetAnimation pet={settings.aiPet==="cat"?"cat":"dog"} size={80}/>
+          {/* Pet — tappable: reveals daily financial wisdom quote with bounce feedback, auto-dismisses after 6s */}
+          <div className={petBouncing?"pet-bouncing":""} onClick={handlePetTap} style={{cursor:"pointer",flexShrink:0}}>
+            <PetAnimation pet={settings.aiPet==="cat"?"cat":"dog"} size={110}/>
+          </div>
 
           {/* All balance info on the right */}
           <div style={{flex:1,minWidth:0}}>
@@ -2055,6 +2087,18 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,goals,settin
           </div>{/* end balance info column */}
         </div>
 
+        {petQuoteVisible&&(
+          <div onClick={closePetQuote} style={{animation:petQuoteFading?"quoteFadeOut 0.28s ease forwards":"quoteSlideIn 0.3s ease",background:t.bgCard,border:`1px solid ${t.border}`,borderRadius:14,padding:"14px 16px",marginBottom:14,borderLeft:`3px solid #fbbf24`,display:"flex",gap:12,alignItems:"flex-start",cursor:"pointer"}}>
+            <div style={{fontSize:22,marginTop:1}}>{settings.aiPet==="cat"?"🐱":"🐶"}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:10,color:t.textMuted,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600}}>{tr("Financial Wisdom",settings.uiLanguage)}</div>
+              <div style={{fontSize:13,color:t.text,lineHeight:1.5,fontStyle:"italic"}}>"{quote.q}"</div>
+              <div style={{fontSize:11,color:t.textMuted,marginTop:6}}>— {quote.a}</div>
+            </div>
+            <div style={{fontSize:11,color:t.textMuted,opacity:0.5,marginTop:1}}>✕</div>
+          </div>
+        )}
+
         {/* ─── ACTION BUTTONS ─── */}
         {/* Three colored cards instead of pill outlines. Bigger, more tap-friendly,
             clearer color semantics (green=in, red=out, blue=move) */}
@@ -2087,17 +2131,6 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,goals,settin
       </div>
 
       <div style={{padding:"0 16px"}}>
-        {/* ─── QUOTE CARD (REDESIGNED) ─── */}
-        {/* Subtle card matching the rest of the home, not a separate gradient banner.
-            Italic quote, author below, soft accent on the left edge. */}
-        <div style={{background:t.bgCard,border:`1px solid ${t.border}`,borderRadius:14,padding:"14px 16px",marginBottom:16,borderLeft:`3px solid #10b981`,display:"flex",gap:12,alignItems:"flex-start"}}>
-          <div style={{fontSize:18,opacity:0.7,marginTop:1}}>💡</div>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:10,color:t.textMuted,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600}}>{tr("Financial Wisdom",settings.uiLanguage)}</div>
-            <div style={{fontSize:13,color:t.text,lineHeight:1.5,fontStyle:"italic"}}>"{quote.q}"</div>
-            <div style={{fontSize:11,color:t.textMuted,marginTop:6}}>— {quote.a}</div>
-          </div>
-        </div>
 
         {/* Accounts */}
         <div style={{marginBottom:16}}>
