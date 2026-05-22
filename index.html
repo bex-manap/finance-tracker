@@ -4056,6 +4056,25 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
           })}
           <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${t.border}`}}>
             <div style={{fontSize:11,fontWeight:700,color:t.textMuted,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:8}}>Add new account</div>
+            {/* Quick-pick chips for Kazakhstan banks that aren't already added */}
+            {(()=>{
+              const taken=new Set(accounts.map(a=>a.name.toLowerCase()));
+              const avail=BANK_PRESETS.filter(p=>!taken.has(p.name.toLowerCase()));
+              if(avail.length===0)return null;
+              return(
+                <div style={{marginBottom:10}}>
+                  <div style={{fontSize:10,color:t.textMuted,marginBottom:6}}>Tap a bank to pre-fill, then enter starting balance and press +</div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                    {avail.map(p=>(
+                      <div key={p.name} onClick={()=>{haptic();setNewAccName(p.name);setNewAccType("bank");setNewAccIcon(p.icon);}} style={{display:"flex",alignItems:"center",gap:6,background:t.bgInput,border:`1px solid ${newAccName===p.name?"#10b981":t.border}`,borderRadius:12,padding:"5px 10px 5px 5px",cursor:"pointer",fontSize:12,color:t.text}}>
+                        <BrandIcon logo={p.logo} icon={p.icon} color={p.color} size={22}/>
+                        <span>{p.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
             <div style={{display:"flex",gap:8,alignItems:"flex-start",marginBottom:8}}>
               <EmojiPicker value={newAccIcon} onChange={setNewAccIcon} t={t} categoryHint={newAccType==="crypto"?"crypto":"accounts"}/>
               <input value={newAccName} onChange={e=>setNewAccName(e.target.value)} placeholder="Account name" style={{flex:1,minWidth:0,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"9px 10px",fontSize:14,fontFamily:"system-ui,sans-serif"}}/>
@@ -5213,10 +5232,14 @@ function App(){
   const t=useMemo(()=>mkTheme(settings.darkMode),[settings.darkMode]);
 
   // Accounts augmented with computed balance (derived from openingBalance + transaction effects).
-  // Every child component reads acc.balance via this — the stored field is now ignored.
+  // Also backfills `logo` and brand `color` by matching account name against BANK_PRESETS —
+  // handles accounts created before logos existed in the data model.
   const accountsWithBalances=useMemo(()=>{
     const bal=computeBalances(accounts,transactions,settings.exchangeRates||{});
-    return accounts.map(a=>({...a,balance:bal[a.id]||0}));
+    return accounts.map(a=>{
+      const preset=(!a.logo||!a.color)?BANK_PRESETS.find(b=>b.name===a.name):null;
+      return{...a,balance:bal[a.id]||0,logo:a.logo||preset?.logo||null,color:a.color||preset?.color||"#10b981"};
+    });
   },[accounts,transactions,settings.exchangeRates]);
 
   // Handle onboarding completion: save user's setup to settings + accounts
