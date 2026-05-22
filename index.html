@@ -1369,13 +1369,14 @@ function PetCommentBlock({comment,petEmoji,t}){
 }
 
 // Renders a brand logo from `/logos/` with onError fallback to an emoji tile.
-// Used for bank/account icons everywhere: onboarding, account cards, settings list.
+// Logo sits directly on the parent background (no backdrop card) — most modern bank SVGs
+// have transparent backgrounds and look cleaner without a wrapper tile.
 function BrandIcon({logo,icon,color,size=32}){
   const[failed,setFailed]=useState(false);
   const radius=Math.round(size*0.22);
   if(logo&&!failed){
     return(
-      <div style={{width:size,height:size,borderRadius:radius,background:"#fff",display:"flex",alignItems:"center",justifyContent:"center",padding:Math.round(size*0.12),boxSizing:"border-box",flexShrink:0}}>
+      <div style={{width:size,height:size,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
         <img src={logo} onError={()=>setFailed(true)} style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain"}} alt=""/>
       </div>
     );
