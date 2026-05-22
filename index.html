@@ -235,6 +235,29 @@ const fmtCompact=(n)=>{
 const fmtFull=(n,c="KZT")=>`${sym[c]||c}${Math.abs(n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 const toKZT=(a,c,r)=>c==="KZT"?a:a*(r[c]||1);
 const fromKZT=(a,c,r)=>c==="KZT"?a:a/(r[c]||1);
+// Derive each account's current balance from its openingBalance + the sum of transaction effects.
+// This eliminates the "two sources of truth" anti-pattern that allowed accounts.balance to drift
+// from transaction history. The displayed balance is always exactly what transactions say.
+const computeBalances=(accounts,transactions,exchangeRates)=>{
+  const balances={};
+  accounts.forEach(a=>{balances[a.id]=a.openingBalance||0;});
+  const conv=(amt,from,to)=>{if(from===to)return amt;const kzt=amt*(exchangeRates[from]||1);return kzt/(exchangeRates[to]||1);};
+  transactions.forEach(tx=>{
+    const acc=accounts.find(a=>a.id===tx.accountId);
+    if(!acc)return;
+    if(tx.type==="income")balances[tx.accountId]=(balances[tx.accountId]||0)+conv(tx.amount,tx.currency,acc.currency);
+    else if(tx.type==="expense")balances[tx.accountId]=(balances[tx.accountId]||0)-conv(tx.amount,tx.currency,acc.currency);
+    else if(tx.type==="transfer"){
+      balances[tx.accountId]=(balances[tx.accountId]||0)-tx.amount;
+      const toAcc=accounts.find(a=>a.id===tx.toAccountId);
+      if(toAcc){
+        const incoming=tx.toAmount!=null?tx.toAmount:conv(tx.amount,tx.currency,toAcc.currency);
+        balances[tx.toAccountId]=(balances[tx.toAccountId]||0)+incoming;
+      }
+    }
+  });
+  return balances;
+};
 const sameMonth=(d,y,m)=>{const dt=new Date(d);return dt.getFullYear()===y&&dt.getMonth()===m;};
 const sameDay=(d,y,m,day)=>{const dt=new Date(d);return dt.getFullYear()===y&&dt.getMonth()===m&&dt.getDate()===day;};
 // Format ISO date string into HH:MM 24-hour clock for display in transaction lists
@@ -2145,7 +2168,7 @@ function AccountTxnsModal({account,transactions,accounts,categories,settings,t,o
   );
 }
 
-function HomeScreen({accounts,transactions,categories,fixedExpenses,goals,settings,onSettingsChange,onAddTxn,onGoalsChange,onTabChange,t,onTxnClick,onReconcile}){
+function HomeScreen({accounts,transactions,categories,fixedExpenses,goals,settings,onSettingsChange,onAddTxn,onGoalsChange,onTabChange,t,onTxnClick}){
   const{selectedCurrency,balanceHidden,exchangeRates}=settings;
   // Pick today's quote from the user's UI language. Use the same daily index across
   // all languages so the same wisdom appears in different languages on the same day.
@@ -2245,20 +2268,6 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,goals,settin
     return Object.values(groups).sort((a,b)=>b.dateObj-a.dateObj);
   },[recentTxns,exchangeRates,settings.uiLanguage]);
 
-  // Detect unaccounted balance: sum of stored balances minus net of all income/expense txns.
-  // When this differs from zero, old transactions are likely lost — offer a reconcile banner.
-  const reconcileInfo=useMemo(()=>{
-    if(accounts.length===0)return{needed:false,totalKZT:0};
-    const totalBalanceKZT=accounts.reduce((s,a)=>s+toKZT(a.balance,a.currency,exchangeRates),0);
-    let txNetKZT=0;
-    transactions.forEach(tx=>{
-      if(tx.type==="income")txNetKZT+=toKZT(tx.amount,tx.currency,exchangeRates);
-      else if(tx.type==="expense")txNetKZT-=toKZT(tx.amount,tx.currency,exchangeRates);
-    });
-    const diff=totalBalanceKZT-txNetKZT;
-    return{needed:Math.abs(diff)>1,totalKZT:diff};
-  },[transactions,accounts,exchangeRates]);
-  const showReconcile=reconcileInfo.needed&&!settings.reconcileDismissed;
   const[selectedAccount,setSelectedAccount]=useState(null);
 
   return(
@@ -2292,24 +2301,6 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,goals,settin
             {settings.darkMode?"☀️":"🌙"}
           </button>
         </div>
-
-        {/* ─── RECONCILIATION BANNER ─── */}
-        {/* Shown when stored account balances don't match the sum of income/expense transactions.
-            Indicates historical data loss; "Reconcile" creates Opening Balance transactions to fix it. */}
-        {showReconcile&&(
-          <div style={{background:t.bgCard,border:`1px solid ${t.border}`,borderRadius:14,padding:"14px",marginBottom:14,borderLeft:`3px solid #f59e0b`}}>
-            <div style={{fontSize:13,fontWeight:600,color:t.text,marginBottom:6,display:"flex",alignItems:"center",gap:6}}>
-              ⚠️ {tr("Balance mismatch detected",settings.uiLanguage)}
-            </div>
-            <div style={{fontSize:12,color:t.textMuted,lineHeight:1.5,marginBottom:10}}>
-              {reconcileInfo.totalKZT>0?"+":"−"}{fmtAmt(fromKZT(Math.abs(reconcileInfo.totalKZT),selectedCurrency,exchangeRates),selectedCurrency)} {tr("isn't backed by any transactions. Reconcile to make your stats accurate.",settings.uiLanguage)}
-            </div>
-            <div style={{display:"flex",gap:8}}>
-              <button onClick={()=>{haptic();onReconcile&&onReconcile();}} style={{flex:1,background:"#10b981",color:"#fff",border:"none",borderRadius:8,padding:"9px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"system-ui,sans-serif"}}>{tr("Reconcile now",settings.uiLanguage)}</button>
-              <button onClick={()=>{haptic();onSettingsChange({...settings,reconcileDismissed:true});}} style={{background:t.bgInput,color:t.textMuted,border:`1px solid ${t.border}`,borderRadius:8,padding:"9px 14px",fontSize:12,cursor:"pointer",fontFamily:"system-ui,sans-serif"}}>{tr("Dismiss",settings.uiLanguage)}</button>
-            </div>
-          </div>
-        )}
 
         {/* ─── HERO BALANCE CARD ─── */}
         {/* Animated pet on the left (Lottie), balance info on the right.
@@ -3763,9 +3754,11 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
   const[editAccName,setEditAccName]=useState("");
   const[editAccCurrency,setEditAccCurrency]=useState("");
   const[editAccIcon,setEditAccIcon]=useState("");
+  const[editAccOpening,setEditAccOpening]=useState("");
   const[newAccName,setNewAccName]=useState("");
   const[newAccType,setNewAccType]=useState("bank");
   const[newAccIcon,setNewAccIcon]=useState("🏦");
+  const[newAccBalance,setNewAccBalance]=useState("");
   const[newCatName,setNewCatName]=useState("");
   const[newCatIcon,setNewCatIcon]=useState("📌");
   const[newCatType,setNewCatType]=useState("expense");
@@ -3978,8 +3971,13 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
                         {allowedCurrencies.map(c=><option key={c} value={c}>{sym[c]} {c}</option>)}
                       </select>
                     </div>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{fontSize:11,color:t.textMuted,minWidth:60}}>Opening:</span>
+                      <input value={editAccOpening} onChange={e=>setEditAccOpening(e.target.value)} type="number" placeholder="0" style={{flex:1,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:7,padding:"6px 10px",fontSize:13,fontFamily:"monospace"}}/>
+                    </div>
+                    <div style={{fontSize:10,color:t.textMuted,lineHeight:1.4,marginLeft:68}}>Starting balance before any transactions. Current balance = opening + transactions.</div>
                     <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-                      <button onClick={()=>{onAccountsChange(accounts.map(x=>x.id===a.id?{...x,name:editAccName,currency:editAccCurrency,icon:editAccIcon||x.icon}:x));setEditAccId(null);}} style={{background:"#10b981",border:"none",borderRadius:6,padding:"5px 12px",color:"#fff",cursor:"pointer",fontSize:12}}>Save</button>
+                      <button onClick={()=>{const opn=parseFloat(editAccOpening);onAccountsChange(accounts.map(x=>x.id===a.id?{...x,name:editAccName,currency:editAccCurrency,icon:editAccIcon||x.icon,openingBalance:isNaN(opn)?(x.openingBalance||0):opn}:x));setEditAccId(null);}} style={{background:"#10b981",border:"none",borderRadius:6,padding:"5px 12px",color:"#fff",cursor:"pointer",fontSize:12}}>Save</button>
                       <button onClick={()=>setEditAccId(null)} style={{background:t.bgInput,border:"none",borderRadius:6,padding:"5px 12px",color:t.textMuted,cursor:"pointer",fontSize:12}}>Cancel</button>
                     </div>
                   </div>
@@ -3987,7 +3985,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
                   <div style={{display:"flex",alignItems:"center",gap:8}}>
                     <span style={{fontSize:18}}>{a.icon}</span>
                     <span style={{flex:1,fontSize:14,color:t.text,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.name} <span style={{color:t.textMuted}}>({a.currency})</span></span>
-                    <button onClick={()=>{setEditAccId(a.id);setEditAccName(a.name);setEditAccCurrency(a.currency);setEditAccIcon(a.icon||"🏦");}} style={{background:t.bgInput,border:"none",borderRadius:6,padding:"5px 10px",color:t.textMuted,cursor:"pointer",fontSize:12,flexShrink:0}}>✎</button>
+                    <button onClick={()=>{setEditAccId(a.id);setEditAccName(a.name);setEditAccCurrency(a.currency);setEditAccIcon(a.icon||"🏦");setEditAccOpening(String(a.openingBalance||0));}} style={{background:t.bgInput,border:"none",borderRadius:6,padding:"5px 10px",color:t.textMuted,cursor:"pointer",fontSize:12,flexShrink:0}}>✎</button>
                     <button onClick={()=>{if(confirm(`Delete account "${a.name}"? This will not delete its transactions.`))onAccountsChange(accounts.filter(x=>x.id!==a.id));}} style={{background:"#ef444422",border:"none",borderRadius:6,padding:"5px 10px",color:"#ef4444",cursor:"pointer",fontSize:12,flexShrink:0}}>✕</button>
                   </div>
                 )}
@@ -3996,17 +3994,22 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
           })}
           <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${t.border}`}}>
             <div style={{fontSize:11,fontWeight:700,color:t.textMuted,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:8}}>Add new account</div>
-            <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
+            <div style={{display:"flex",gap:8,alignItems:"flex-start",marginBottom:8}}>
               <EmojiPicker value={newAccIcon} onChange={setNewAccIcon} t={t} categoryHint={newAccType==="crypto"?"crypto":"accounts"}/>
               <input value={newAccName} onChange={e=>setNewAccName(e.target.value)} placeholder="Account name" style={{flex:1,minWidth:0,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"9px 10px",fontSize:14,fontFamily:"system-ui,sans-serif"}}/>
               <select value={newAccType} onChange={e=>{setNewAccType(e.target.value);setNewAccIcon(e.target.value==="crypto"?"💎":"🏦");}} style={{background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"9px 6px",fontSize:13,flexShrink:0}}>
                 <option value="bank">Bank</option><option value="crypto">Crypto</option>
               </select>
+            </div>
+            <div style={{display:"flex",gap:8,alignItems:"center"}}>
+              <input value={newAccBalance} onChange={e=>setNewAccBalance(e.target.value)} type="number" placeholder={`Starting balance (${newAccType==="crypto"?"USDT":"KZT"})`} style={{flex:1,background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:8,padding:"9px 10px",fontSize:14,fontFamily:"monospace"}}/>
               <button onClick={()=>{
                 if(!newAccName.trim())return;
-                onAccountsChange([...accounts,{id:uid(),name:newAccName.trim(),type:newAccType,currency:newAccType==="crypto"?"USDT":"KZT",balance:0,icon:newAccIcon||(newAccType==="bank"?"🏦":"💰"),color:"#10b981",isActive:true}]);
+                const openBal=parseFloat(newAccBalance)||0;
+                onAccountsChange([...accounts,{id:uid(),name:newAccName.trim(),type:newAccType,currency:newAccType==="crypto"?"USDT":"KZT",openingBalance:openBal,icon:newAccIcon||(newAccType==="bank"?"🏦":"💰"),color:"#10b981",isActive:true}]);
                 track("account_create",{type:newAccType});
                 setNewAccName("");
+                setNewAccBalance("");
                 setNewAccIcon(newAccType==="bank"?"🏦":"💎");
               }} style={{background:"#10b981",border:"none",borderRadius:8,padding:"9px 14px",color:"#fff",cursor:"pointer",fontSize:16,fontWeight:700,flexShrink:0}}>+</button>
             </div>
@@ -4836,6 +4839,32 @@ function App(){
           if(!txns||txns.length===0)txns=LS.get("ft_transactions",[]);
           // Merge with default settings so new fields (like aiPet) always have a value
           sets={...DEF_SETTINGS,...sets};
+          // One-time migration: derive openingBalance from legacy stored balance.
+          // Going forward, balance is computed from openingBalance + transaction effects (computeBalances),
+          // so the legacy stored balance.field becomes irrelevant after this.
+          const accountsNeedMigration=(accs||[]).some(a=>a.openingBalance===undefined);
+          if(accountsNeedMigration&&accs){
+            const rates=sets.exchangeRates||{};
+            const conv=(amt,from,to)=>{if(from===to)return amt;const kzt=amt*(rates[from]||1);return kzt/(rates[to]||1);};
+            accs=accs.map(a=>{
+              if(a.openingBalance!==undefined)return a;
+              let txNet=0;
+              (txns||[]).forEach(tx=>{
+                if(tx.type==="income"&&tx.accountId===a.id)txNet+=conv(tx.amount,tx.currency,a.currency);
+                else if(tx.type==="expense"&&tx.accountId===a.id)txNet-=conv(tx.amount,tx.currency,a.currency);
+                else if(tx.type==="transfer"){
+                  if(tx.accountId===a.id)txNet-=tx.amount;
+                  if(tx.toAccountId===a.id){
+                    const incoming=tx.toAmount!=null?tx.toAmount:conv(tx.amount,tx.currency,a.currency);
+                    txNet+=incoming;
+                  }
+                }
+              });
+              return{...a,openingBalance:(a.balance||0)-txNet};
+            });
+            STORE.set("ft_accounts",accs).catch(()=>{});
+            console.log("[STORE] Migrated accounts to openingBalance schema.");
+          }
           // Always sync profile picture from Telegram (its CDN URLs can rotate over time).
           // Also strips any legacy base64 leftover from the removed upload feature, which could
           // blow past CloudStorage's 4096-byte limit and silently kill settings sync.
@@ -4925,110 +4954,18 @@ function App(){
     return kztValue/(rates[toCurrency]||1);
   },[settings.exchangeRates]);
 
-  // Apply the balance impact of a transaction to the accounts list.
-  // Used both for normal save and for the "edit" flow (apply new) / "delete" flow (reverse).
+  // Save a new transaction. Balance is derived (openingBalance + sum of txn effects) so we
+  // no longer mutate accounts here — the displayed balance auto-updates via accountsWithBalances.
   const handleSaveTxn=useCallback((txn)=>{
-    const newTxns=[...transactions,txn];
-    setTransactions(newTxns);
+    setTransactions([...transactions,txn]);
     STORE.saveTransaction(txn).catch(()=>{});
-    const updAcc=accounts.map(a=>{
-      if(txn.type==="income"&&a.id===txn.accountId){
-        const delta=convertAmount(txn.amount,txn.currency,a.currency);
-        return{...a,balance:a.balance+delta};
-      }
-      if(txn.type==="expense"&&a.id===txn.accountId){
-        const delta=convertAmount(txn.amount,txn.currency,a.currency);
-        return{...a,balance:a.balance-delta};
-      }
-      if(txn.type==="transfer"){
-        if(a.id===txn.accountId){
-          return{...a,balance:a.balance-txn.amount};
-        }
-        if(a.id===txn.toAccountId){
-          const incoming=txn.toAmount!=null?txn.toAmount:convertAmount(txn.amount,txn.currency,a.currency);
-          return{...a,balance:a.balance+incoming};
-        }
-      }
-      return a;
-    });
-    setAccounts(updAcc);
-  },[transactions,accounts,convertAmount]);
+  },[transactions]);
 
+  // Delete a transaction. Same as above: no balance mutation needed.
   const handleDeleteTxn=useCallback((id)=>{
-    const txn=transactions.find(t=>t.id===id);
-    if(!txn)return;
-    const updAcc=accounts.map(a=>{
-      if(txn.type==="income"&&a.id===txn.accountId){
-        const delta=convertAmount(txn.amount,txn.currency,a.currency);
-        return{...a,balance:a.balance-delta};
-      }
-      if(txn.type==="expense"&&a.id===txn.accountId){
-        const delta=convertAmount(txn.amount,txn.currency,a.currency);
-        return{...a,balance:a.balance+delta};
-      }
-      if(txn.type==="transfer"){
-        if(a.id===txn.accountId)return{...a,balance:a.balance+txn.amount};
-        if(a.id===txn.toAccountId){
-          const incoming=txn.toAmount!=null?txn.toAmount:convertAmount(txn.amount,txn.currency,a.currency);
-          return{...a,balance:a.balance-incoming};
-        }
-      }
-      return a;
-    });
-    setAccounts(updAcc);
     setTransactions(transactions.filter(t=>t.id!==id));
     STORE.deleteTransaction(id).catch(()=>{});
-  },[transactions,accounts,convertAmount]);
-
-  // Reconcile account balances with transaction history. Creates "Opening balance" txns
-  // dated just before the user's first existing transaction. Used when account balances
-  // contain amounts that aren't backed by any transaction (e.g., due to historical data loss).
-  const handleReconcile=useCallback(()=>{
-    const lang=settings.uiLanguage||"English";
-    const txBalance={};
-    accounts.forEach(a=>{txBalance[a.id]=0;});
-    transactions.forEach(tx=>{
-      const acc=accounts.find(a=>a.id===tx.accountId);
-      if(tx.type==="income"&&acc){
-        txBalance[tx.accountId]+=convertAmount(tx.amount,tx.currency,acc.currency);
-      }else if(tx.type==="expense"&&acc){
-        txBalance[tx.accountId]-=convertAmount(tx.amount,tx.currency,acc.currency);
-      }else if(tx.type==="transfer"){
-        if(acc&&txBalance[tx.accountId]!=null)txBalance[tx.accountId]-=tx.amount;
-        const toAcc=accounts.find(a=>a.id===tx.toAccountId);
-        if(toAcc&&txBalance[tx.toAccountId]!=null){
-          const incoming=tx.toAmount!=null?tx.toAmount:convertAmount(tx.amount,tx.currency,toAcc.currency);
-          txBalance[tx.toAccountId]+=incoming;
-        }
-      }
-    });
-    const firstTs=transactions.length>0?Math.min(...transactions.map(t=>new Date(t.date).getTime())):Date.now();
-    const openingDate=new Date(firstTs-86400000).toISOString();
-    const incomeCat=categories.find(c=>c.type==="income")||categories[0];
-    const expenseCat=categories.find(c=>c.type==="expense")||categories[0];
-    const newTxns=[];
-    accounts.forEach(a=>{
-      const diff=a.balance-(txBalance[a.id]||0);
-      if(Math.abs(diff)<0.01)return;
-      const isPositive=diff>0;
-      const tx={
-        id:uid(),
-        type:isPositive?"income":"expense",
-        amount:Math.abs(diff),
-        currency:a.currency,
-        accountId:a.id,
-        toAccountId:null,
-        categoryId:(isPositive?incomeCat:expenseCat)?.id||null,
-        subcategoryId:null,
-        note:tr("Opening balance",lang),
-        date:openingDate,
-        aiComment:null
-      };
-      newTxns.push(tx);
-      STORE.saveTransaction(tx).catch(()=>{});
-    });
-    if(newTxns.length>0)setTransactions([...transactions,...newTxns]);
-  },[transactions,accounts,categories,settings.uiLanguage,convertAmount]);
+  },[transactions]);
 
   // Reset all data: clears both localStorage and CloudStorage, then reloads the app
   const handleReset=useCallback(async()=>{
@@ -5137,6 +5074,13 @@ function App(){
 
   const t=useMemo(()=>mkTheme(settings.darkMode),[settings.darkMode]);
 
+  // Accounts augmented with computed balance (derived from openingBalance + transaction effects).
+  // Every child component reads acc.balance via this — the stored field is now ignored.
+  const accountsWithBalances=useMemo(()=>{
+    const bal=computeBalances(accounts,transactions,settings.exchangeRates||{});
+    return accounts.map(a=>({...a,balance:bal[a.id]||0}));
+  },[accounts,transactions,settings.exchangeRates]);
+
   // Handle onboarding completion: save user's setup to settings + accounts
   const handleOnboardingComplete=useCallback((data)=>{
     const newSettings={...settings,
@@ -5182,10 +5126,10 @@ function App(){
   return(
     <div style={{height:"100vh",display:"flex",flexDirection:"column",background:t.bg,maxWidth:430,margin:"0 auto",position:"relative",overflow:"hidden"}}>
       <div style={{flex:1,overflow:"hidden",position:"relative"}} className="fade-in">
-        {tab==="home"&&<HomeScreen accounts={accounts} transactions={transactions} categories={categories} fixedExpenses={fixedExpenses} goals={goals} settings={settings} onSettingsChange={setSettings} onAddTxn={(mode)=>{setAddMode(mode);setAddModal(true);}} onGoalsChange={setGoals} onTabChange={setTab} t={t} onTxnClick={setSelTxn} onReconcile={handleReconcile}/>}
+        {tab==="home"&&<HomeScreen accounts={accountsWithBalances} transactions={transactions} categories={categories} fixedExpenses={fixedExpenses} goals={goals} settings={settings} onSettingsChange={setSettings} onAddTxn={(mode)=>{setAddMode(mode);setAddModal(true);}} onGoalsChange={setGoals} onTabChange={setTab} t={t} onTxnClick={setSelTxn}/>}
         {tab==="analytics"&&<AnalyticsScreen transactions={transactions} categories={categories} settings={settings} t={t}/>}
-        {tab==="history"&&<HistoryScreen transactions={transactions} accounts={accounts} categories={categories} settings={settings} onTxnClick={setSelTxn} t={t}/>}
-        {tab==="settings"&&<SettingsScreen accounts={accounts} categories={categories} fixedExpenses={fixedExpenses} goals={goals} transactions={transactions} settings={settings} onSettingsChange={setSettings} onAccountsChange={setAccounts} onCategoriesChange={setCategories} onFixedChange={setFixed} onGoalsChange={setGoals} onTransactionsChange={setTransactions} onReset={handleReset} onRefreshRates={handleRefreshRates} onExport={handleExportCSV} t={t}/>}
+        {tab==="history"&&<HistoryScreen transactions={transactions} accounts={accountsWithBalances} categories={categories} settings={settings} onTxnClick={setSelTxn} t={t}/>}
+        {tab==="settings"&&<SettingsScreen accounts={accountsWithBalances} categories={categories} fixedExpenses={fixedExpenses} goals={goals} transactions={transactions} settings={settings} onSettingsChange={setSettings} onAccountsChange={setAccounts} onCategoriesChange={setCategories} onFixedChange={setFixed} onGoalsChange={setGoals} onTransactionsChange={setTransactions} onReset={handleReset} onRefreshRates={handleRefreshRates} onExport={handleExportCSV} t={t}/>}
       </div>
       <div style={{flexShrink:0,display:"flex",alignItems:"center",background:t.tabBg,borderTop:`1px solid ${t.tabBorder}`,padding:"6px 0 calc(10px + env(safe-area-inset-bottom, 0px))",zIndex:50}}>
         {TABS.map(({k,icon,label})=>{
@@ -5209,8 +5153,8 @@ function App(){
           );
         })}
       </div>
-      <AddModal open={addModal} onClose={()=>setAddModal(false)} accounts={accounts} categories={categories} settings={settings} onSave={handleSaveTxn} t={t} initMode={addMode}/>
-      <TxnDetail txn={selTxn} open={!!selTxn} onClose={()=>setSelTxn(null)} accounts={accounts} categories={categories} onDelete={handleDeleteTxn} settings={settings} t={t}/>
+      <AddModal open={addModal} onClose={()=>setAddModal(false)} accounts={accountsWithBalances} categories={categories} settings={settings} onSave={handleSaveTxn} t={t} initMode={addMode}/>
+      <TxnDetail txn={selTxn} open={!!selTxn} onClose={()=>setSelTxn(null)} accounts={accountsWithBalances} categories={categories} onDelete={handleDeleteTxn} settings={settings} t={t}/>
     </div>
   );
 }
