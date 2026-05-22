@@ -414,14 +414,17 @@ const categoryMatchesMode=(cat,mode)=>{
   const type=cat.type||(/salary|income|loan|freelance/i.test(cat.name)?"income":"expense");
   return type===mode;
 };
-// Bank and crypto presets offered during onboarding
+// Bank and crypto presets offered during onboarding.
+// `logo` points to a self-hosted SVG in /logos/; `icon` is the emoji fallback
+// shown if the image fails to load. `color` is the brand accent for backgrounds.
 const BANK_PRESETS=[
-  {name:"Freedom Bank",icon:"🏦",color:"#3b82f6"},
-  {name:"Kaspi",icon:"💳",color:"#ef4444"},
-  {name:"Halyk Bank",icon:"🏛️",color:"#10b981"},
-  {name:"Jusan Bank",icon:"🏦",color:"#f59e0b"},
-  {name:"Forte Bank",icon:"🏦",color:"#8b5cf6"},
-  {name:"Bereke Bank",icon:"🏦",color:"#06b6d4"},
+  {name:"Kaspi",logo:"logos/kaspi.svg",icon:"💳",color:"#ef4444"},
+  {name:"Halyk Bank",logo:"logos/halyk.svg",icon:"🏛️",color:"#10b981"},
+  {name:"Freedom Bank",logo:"logos/freedom.svg",icon:"🏦",color:"#3b82f6"},
+  {name:"Forte Bank",logo:"logos/forte.svg",icon:"🏦",color:"#8b5cf6"},
+  {name:"Bereke Bank",logo:"logos/bereke.svg",icon:"🏦",color:"#06b6d4"},
+  {name:"Alatau City Bank",logo:"logos/alatau.svg",icon:"🏦",color:"#f59e0b"},
+  {name:"Bank CenterCredit",logo:"logos/bcc.svg",icon:"🏦",color:"#0ea5e9"},
 ];
 const CRYPTO_PRESETS=[
   {name:"Binance",icon:"₿",color:"#f59e0b"},
@@ -1361,6 +1364,25 @@ function PetCommentBlock({comment,petEmoji,t}){
           </span>
         </div>
       )}
+    </div>
+  );
+}
+
+// Renders a brand logo from `/logos/` with onError fallback to an emoji tile.
+// Used for bank/account icons everywhere: onboarding, account cards, settings list.
+function BrandIcon({logo,icon,color,size=32}){
+  const[failed,setFailed]=useState(false);
+  const radius=Math.round(size*0.22);
+  if(logo&&!failed){
+    return(
+      <div style={{width:size,height:size,borderRadius:radius,background:"#fff",display:"flex",alignItems:"center",justifyContent:"center",padding:Math.round(size*0.12),boxSizing:"border-box",flexShrink:0}}>
+        <img src={logo} onError={()=>setFailed(true)} style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain"}} alt=""/>
+      </div>
+    );
+  }
+  return(
+    <div style={{width:size,height:size,borderRadius:radius,background:(color||"#64748b")+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:Math.round(size*0.55),flexShrink:0}}>
+      {icon||"🏦"}
     </div>
   );
 }
@@ -2458,7 +2480,7 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,goals,settin
             {accounts.map(acc=>(
               <div key={acc.id} onClick={()=>{haptic();setSelectedAccount(acc);}} style={{minWidth:148,background:t.bgCard,borderRadius:14,padding:"14px",border:`1px solid ${t.border}`,flexShrink:0,cursor:"pointer"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-                  <div style={{width:34,height:34,borderRadius:9,background:acc.color+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:17}}>{acc.icon}</div>
+                  <BrandIcon logo={acc.logo} icon={acc.icon} color={acc.color} size={36}/>
                   <span style={{fontSize:10,color:t.textMuted,background:t.bgInput,borderRadius:6,padding:"2px 7px",textTransform:"uppercase",letterSpacing:"0.5px"}}>{acc.type}</span>
                 </div>
                 <div style={{fontSize:12,color:t.textMuted,marginBottom:3}}>{acc.name}</div>
@@ -4022,8 +4044,8 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
                     </div>
                   </div>
                 ):(
-                  <div style={{display:"flex",alignItems:"center",gap:8}}>
-                    <span style={{fontSize:18}}>{a.icon}</span>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <BrandIcon logo={a.logo} icon={a.icon} color={a.color} size={28}/>
                     <span style={{flex:1,fontSize:14,color:t.text,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.name} <span style={{color:t.textMuted}}>({a.currency})</span></span>
                     <button onClick={()=>{setEditAccId(a.id);setEditAccName(a.name);setEditAccCurrency(a.currency);setEditAccIcon(a.icon||"🏦");setEditAccOpening(String(a.openingBalance||0));}} style={{background:t.bgInput,border:"none",borderRadius:6,padding:"5px 10px",color:t.textMuted,cursor:"pointer",fontSize:12,flexShrink:0}}>✎</button>
                     <button onClick={()=>{if(confirm(`Delete account "${a.name}"? This will not delete its transactions.`))onAccountsChange(accounts.filter(x=>x.id!==a.id));}} style={{background:"#ef444422",border:"none",borderRadius:6,padding:"5px 10px",color:"#ef4444",cursor:"pointer",fontSize:12,flexShrink:0}}>✕</button>
@@ -4046,7 +4068,10 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
               <button onClick={()=>{
                 if(!newAccName.trim())return;
                 const openBal=parseFloat(newAccBalance)||0;
-                onAccountsChange([...accounts,{id:uid(),name:newAccName.trim(),type:newAccType,currency:newAccType==="crypto"?"USDT":"KZT",openingBalance:openBal,icon:newAccIcon||(newAccType==="bank"?"🏦":"💰"),color:"#10b981",isActive:true}]);
+                const trimmed=newAccName.trim();
+                // If the name matches a known bank preset, auto-pick its logo/color
+                const preset=BANK_PRESETS.find(b=>b.name.toLowerCase()===trimmed.toLowerCase());
+                onAccountsChange([...accounts,{id:uid(),name:trimmed,type:newAccType,currency:newAccType==="crypto"?"USDT":"KZT",openingBalance:openBal,logo:preset?.logo||null,icon:newAccIcon||(newAccType==="bank"?"🏦":"💰"),color:preset?.color||"#10b981",isActive:true}]);
                 track("account_create",{type:newAccType});
                 setNewAccName("");
                 setNewAccBalance("");
@@ -4589,7 +4614,8 @@ function OnboardingScreen({tgUser,onComplete}){
         name:bankName,
         type:"bank",
         currency:currency,
-        balance:0,
+        openingBalance:0,
+        logo:preset?.logo||null,
         icon:preset?.icon||"🏦",
         color:preset?.color||"#3b82f6",
         isActive:true
@@ -4602,7 +4628,8 @@ function OnboardingScreen({tgUser,onComplete}){
         name:cryptoName,
         type:"crypto",
         currency:"USDT",
-        balance:0,
+        openingBalance:0,
+        logo:preset?.logo||null,
         icon:preset?.icon||"💰",
         color:preset?.color||"#f59e0b",
         isActive:true
@@ -4676,8 +4703,8 @@ function OnboardingScreen({tgUser,onComplete}){
               {BANK_PRESETS.map(bank=>{
                 const active=selectedBanks.includes(bank.name);
                 return(
-                  <div key={bank.name} onClick={()=>toggleBank(bank.name)} style={{...chipBase,...(active?chipActive:{}),display:"flex",alignItems:"center",gap:8}}>
-                    <span style={{fontSize:18}}>{bank.icon}</span>
+                  <div key={bank.name} onClick={()=>toggleBank(bank.name)} style={{...chipBase,...(active?chipActive:{}),display:"flex",alignItems:"center",gap:8,paddingLeft:6}}>
+                    <BrandIcon logo={bank.logo} icon={bank.icon} color={bank.color} size={26}/>
                     <span>{bank.name}</span>
                     {active&&<span style={{fontSize:11,color:"#10b981"}}>✓</span>}
                   </div>
