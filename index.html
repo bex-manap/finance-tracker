@@ -671,6 +671,46 @@ const STORE={
   }
 };
 
+// ── SERVER API ──
+// Talks to the Cloudflare Worker (finance-tracker-proxy) which persists user data to D1.
+// Server is the source of truth; localStorage is offline cache. All calls authenticate
+// via Telegram's signed initData (the Worker re-validates the HMAC server-side).
+const API_BASE="https://finance-tracker-proxy.life-bekzat.workers.dev";
+const API={
+  initData:null,
+  available:false,
+  init(){
+    this.initData=window.Telegram?.WebApp?.initData||null;
+    this.available=!!this.initData;
+  },
+  // Serialize writes so concurrent saves don't race
+  _queue:Promise.resolve(),
+  async _call(path,body){
+    if(!this.initData)throw new Error("no-initdata");
+    const res=await fetch(`${API_BASE}/api/data/${path}`,{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({initData:this.initData,...body})
+    });
+    if(!res.ok){
+      const errBody=await res.json().catch(()=>({}));
+      throw new Error(errBody.error||`HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+  // Queue write so multiple concurrent saves don't trample each other in flight
+  _qcall(path,body){
+    this._queue=this._queue.then(()=>this._call(path,body),()=>this._call(path,body));
+    return this._queue;
+  },
+  sync(since=0){return this._call("sync",{since});},
+  saveTransaction(txn){return this._qcall("txn",{txn});},
+  deleteTransaction(txn_id){return this._qcall("txn-delete",{txn_id});},
+  saveState(state){return this._qcall("state",state);},
+  migrate(data){return this._call("migrate",data);},
+  reset(){return this._call("reset",{});}
+};
+
 // ── LIVE EXCHANGE RATES ──
 // Fetches real-time rates from free public APIs. No API key required.
 // - Fiat (USD, EUR): exchangerate-api (open access, no key)
@@ -909,9 +949,9 @@ const TRANSLATIONS={
     "Have feedback, found a bug, or have a feature suggestion? Reach out — I genuinely read every message.":"Есть отзыв, нашли ошибку или хотите предложить функцию? Напишите — я читаю все сообщения.",
     // FAQ — questions and answers
     "Where is my data stored?":"Где хранятся мои данные?",
-    "Your data is stored privately in Telegram CloudStorage, tied to your Telegram account. It's not visible to anyone else, including the app developer. It syncs automatically across devices when you log in with the same Telegram account.":"Данные хранятся в Telegram CloudStorage, привязаны к вашему аккаунту Telegram. Никто другой их не видит, включая разработчика. Они автоматически синхронизируются между устройствами, если вы заходите с того же аккаунта Telegram.",
+    "Your data is stored on a secure private database (Cloudflare D1), tied to your Telegram account ID. Your device also keeps a local copy for offline access. It syncs automatically across your devices when you log in with the same Telegram account.":"Данные хранятся в защищённой частной базе данных (Cloudflare D1), привязаны к ID вашего Telegram-аккаунта. Локальная копия также сохраняется на устройстве для офлайн-доступа. Синхронизация между устройствами происходит автоматически при входе с того же аккаунта Telegram.",
     "Is my financial data shared with anyone?":"Передаются ли мои финансовые данные кому-либо?",
-    "No. Transaction amounts, account balances, and notes never leave your Telegram CloudStorage. The app only sends anonymous usage statistics (e.g., which features you use, what language you picked) to help improve the app — never your actual financial data.":"Нет. Суммы транзакций, балансы счетов и заметки никогда не покидают ваш Telegram CloudStorage. Приложение отправляет только анонимную статистику использования (например, какие функции вы используете, какой язык выбрали), чтобы улучшать приложение — никогда сами финансовые данные.",
+    "No. Your transactions and account balances are stored only in the private database for this app and your own device. They are never shared with third parties, sold, or used for advertising. The developer can see your data only for support purposes if you reach out.":"Нет. Ваши транзакции и балансы счетов хранятся только в частной базе данных этого приложения и на вашем устройстве. Они не передаются третьим лицам, не продаются и не используются для рекламы. Разработчик может увидеть данные только для поддержки, если вы обратитесь.",
     "How do exchange rates work?":"Как работают курсы валют?",
     "Exchange rates update automatically once per hour from open public APIs (open.er-api.com for fiat, CoinGecko for crypto). When you create a transaction in a different currency, it's converted to KZT using the current rate. You can also manually edit rates in Settings → Exchange Rates if you want to lock specific values.":"Курсы обновляются автоматически раз в час из открытых публичных API (open.er-api.com для фиата, CoinGecko для крипто). Когда вы создаёте транзакцию в другой валюте, она конвертируется в тенге по текущему курсу. Вы также можете вручную править курсы в Настройки → Курсы валют, если хотите зафиксировать определённые значения.",
     "What's the difference between income and a transfer?":"В чём разница между доходом и переводом?",
@@ -931,13 +971,13 @@ const TRANSLATIONS={
     "What if I want to see specific dates of transactions?":"Что если я хочу видеть конкретные даты транзакций?",
     "Go to the Analytics tab → 'Overview' for a calendar heatmap showing your spending by day, or 'My Progress' to compare different time periods (weeks/months). The History tab shows all transactions grouped by date.":"Перейдите во вкладку Аналитика → «Обзор», чтобы увидеть календарь с расходами по дням, или «Мой прогресс», чтобы сравнить разные периоды (недели/месяцы). Вкладка История показывает все транзакции, сгруппированные по датам.",
     "Can I use this app outside Telegram?":"Можно ли пользоваться приложением вне Telegram?",
-    "Currently no — the app is built as a Telegram Mini App and uses Telegram CloudStorage for your data. A standalone web/PWA version may come later if there's enough interest.":"Пока нет — приложение сделано как Telegram Mini App и хранит данные в Telegram CloudStorage. Отдельная веб/PWA-версия может появиться позже, если будет достаточный интерес.",
+    "Currently no — the app is a Telegram Mini App and uses your Telegram account ID for sign-in. A standalone web/PWA version may come later if there's enough interest.":"Пока нет — приложение сделано как Telegram Mini App и использует ID вашего Telegram-аккаунта для входа. Отдельная веб/PWA-версия может появиться позже, если будет достаточный интерес.",
     "How do I export my data?":"Как экспортировать мои данные?",
     "Go to Settings → scroll to 'Download CSV'. You'll get a file with all your transactions and current account balances that opens in Excel, Numbers, or Google Sheets.":"Зайдите в Настройки → пролистайте до «Скачать CSV». Получите файл со всеми транзакциями и текущими балансами счетов; открывается в Excel, Numbers или Google Sheets.",
     "What if I lose my phone?":"Что если я потеряю телефон?",
-    "Your data is in Telegram CloudStorage, not on your phone. Just install Telegram on your new device, log into the same account, open the bot, and everything will sync.":"Ваши данные хранятся в Telegram CloudStorage, а не на телефоне. Просто установите Telegram на новом устройстве, войдите в тот же аккаунт, откройте бота — всё синхронизируется.",
+    "Your data is on the server, not on your phone. Install Telegram on your new device, log into the same account, open the bot — everything syncs back.":"Ваши данные на сервере, а не на телефоне. Установите Telegram на новом устройстве, войдите в тот же аккаунт, откройте бота — всё синхронизируется.",
     "How can I delete all my data?":"Как удалить все мои данные?",
-    "Settings → scroll to the bottom → 🗑️ Reset All Data. This wipes everything from your Telegram CloudStorage and the device. It cannot be undone.":"Настройки → в самом низу → 🗑️ Сбросить все данные. Это удалит всё из Telegram CloudStorage и с устройства. Действие необратимо.",
+    "Settings → scroll to the bottom → 🗑️ Reset All Data. This wipes everything from the server and the device. It cannot be undone.":"Настройки → в самом низу → 🗑️ Сбросить все данные. Это удалит всё с сервера и с устройства. Действие необратимо.",
     "Is this app free?":"Приложение бесплатное?",
     "Yes, completely free. No ads, no premium tier, no subscriptions. If you'd like to support development, reach out via the Contact section in Settings.":"Да, полностью бесплатное. Без рекламы, премиум-уровней и подписок. Если хотите поддержать разработку — напишите через раздел Связаться в настройках.",
     "Go to History to view all transactions":"Открыть Историю, чтобы увидеть все транзакции",
@@ -1062,9 +1102,9 @@ const TRANSLATIONS={
     "Have feedback, found a bug, or have a feature suggestion? Reach out — I genuinely read every message.":"Пікіріңіз, тапқан қате немесе ұсыныс бар ма? Хабарласыңыз — әр хатты оқимын.",
     // FAQ — questions and answers (Kazakh)
     "Where is my data stored?":"Менің деректерім қайда сақталады?",
-    "Your data is stored privately in Telegram CloudStorage, tied to your Telegram account. It's not visible to anyone else, including the app developer. It syncs automatically across devices when you log in with the same Telegram account.":"Деректер Telegram CloudStorage-те, сіздің Telegram аккаунтыңызға байланған түрде сақталады. Оларды басқа ешкім, оның ішінде қолданба әзірлеушісі де көрмейді. Сол Telegram аккаунтымен кірген кезде құрылғылар арасында автоматты түрде синхрондалады.",
+    "Your data is stored on a secure private database (Cloudflare D1), tied to your Telegram account ID. Your device also keeps a local copy for offline access. It syncs automatically across your devices when you log in with the same Telegram account.":"Деректер қауіпсіз жеке дерекқорда (Cloudflare D1) сақталады және Telegram аккаунтыңыздың ID-сімен байланған. Құрылғыда офлайн қол жеткізу үшін жергілікті көшірмесі де сақталады. Сол Telegram аккаунтымен кірген кезде құрылғылар арасында автоматты түрде синхрондалады.",
     "Is my financial data shared with anyone?":"Қаржылық деректерім біреумен бөлісіле ме?",
-    "No. Transaction amounts, account balances, and notes never leave your Telegram CloudStorage. The app only sends anonymous usage statistics (e.g., which features you use, what language you picked) to help improve the app — never your actual financial data.":"Жоқ. Транзакция сомалары, шот баланстары мен жазбалар Telegram CloudStorage-тен ешқашан шықпайды. Қолданба тек анонимді қолдану статистикасын (мысалы, қандай функцияларды қолданасыз, қандай тілді таңдадыңыз) қолданбаны жақсарту үшін жібереді — ешқашан нақты қаржылық деректерді емес.",
+    "No. Your transactions and account balances are stored only in the private database for this app and your own device. They are never shared with third parties, sold, or used for advertising. The developer can see your data only for support purposes if you reach out.":"Жоқ. Транзакциялар мен шот баланстары осы қолданбаның жеке дерекқорында және сіздің құрылғыңызда ғана сақталады. Олар үшінші тұлғаларға берілмейді, сатылмайды және жарнама үшін қолданылмайды. Әзірлеуші деректі тек қолдау көрсету мақсатында, сіз өзіңіз хабарласқан кезде ғана көре алады.",
     "How do exchange rates work?":"Айырбас бағамдары қалай жұмыс істейді?",
     "Exchange rates update automatically once per hour from open public APIs (open.er-api.com for fiat, CoinGecko for crypto). When you create a transaction in a different currency, it's converted to KZT using the current rate. You can also manually edit rates in Settings → Exchange Rates if you want to lock specific values.":"Бағамдар сағат сайын ашық API арқылы автоматты түрде жаңарып отырады (фиат үшін open.er-api.com, крипто үшін CoinGecko). Басқа валютада транзакция жасағанда, ол ағымдағы бағаммен теңгеге аударылады. Қаласаңыз, нақты мәндерді бекіту үшін Параметрлер → Айырбас бағамдары бөлімінде бағамдарды қолмен өзгертуге болады.",
     "What's the difference between income and a transfer?":"Кіріс пен аударымның айырмашылығы неде?",
@@ -1084,13 +1124,13 @@ const TRANSLATIONS={
     "What if I want to see specific dates of transactions?":"Транзакциялардың нақты күндерін көргім келсе ше?",
     "Go to the Analytics tab → 'Overview' for a calendar heatmap showing your spending by day, or 'My Progress' to compare different time periods (weeks/months). The History tab shows all transactions grouped by date.":"Аналитика қойындысы → «Шолу» бөлімінде шығысты күндер бойынша көрсететін календарь бар. «Менің прогресс» бөлімінде әртүрлі кезеңдерді (апта/ай) салыстыруға болады. Тарих қойындысында барлық транзакциялар күн бойынша топталып көрсетіледі.",
     "Can I use this app outside Telegram?":"Қолданбаны Telegram-нан тыс пайдалана аламын ба?",
-    "Currently no — the app is built as a Telegram Mini App and uses Telegram CloudStorage for your data. A standalone web/PWA version may come later if there's enough interest.":"Қазіргі уақытта жоқ — қолданба Telegram Mini App ретінде жасалған және деректерді Telegram CloudStorage-те сақтайды. Жеткілікті қызығушылық болса, кейін веб/PWA нұсқасы шығуы мүмкін.",
+    "Currently no — the app is a Telegram Mini App and uses your Telegram account ID for sign-in. A standalone web/PWA version may come later if there's enough interest.":"Қазіргі уақытта жоқ — қолданба Telegram Mini App ретінде жасалған және кіру үшін Telegram аккаунтыңыздың ID-сін қолданады. Жеткілікті қызығушылық болса, кейін веб/PWA нұсқасы шығуы мүмкін.",
     "How do I export my data?":"Деректерімді қалай экспорттаймын?",
     "Go to Settings → scroll to 'Download CSV'. You'll get a file with all your transactions and current account balances that opens in Excel, Numbers, or Google Sheets.":"Параметрлерге кіріп, «CSV жүктеп алу» бөліміне жетіңіз. Excel, Numbers немесе Google Sheets-те ашылатын барлық транзакциялар мен ағымдағы шот баланстары бар файл аласыз.",
     "What if I lose my phone?":"Телефонымды жоғалтып алсам ше?",
-    "Your data is in Telegram CloudStorage, not on your phone. Just install Telegram on your new device, log into the same account, open the bot, and everything will sync.":"Деректер телефонда емес, Telegram CloudStorage-те. Жаңа құрылғыға Telegram орнатып, сол аккаунтпен кіріңіз де, ботты ашыңыз — бәрі синхрондалады.",
+    "Your data is on the server, not on your phone. Install Telegram on your new device, log into the same account, open the bot — everything syncs back.":"Деректер телефонда емес, серверде. Жаңа құрылғыға Telegram орнатып, сол аккаунтпен кіріңіз де, ботты ашыңыз — бәрі қайтадан синхрондалады.",
     "How can I delete all my data?":"Барлық деректерімді қалай жоямын?",
-    "Settings → scroll to the bottom → 🗑️ Reset All Data. This wipes everything from your Telegram CloudStorage and the device. It cannot be undone.":"Параметрлер → ең төменге айналдырыңыз → 🗑️ Барлық деректерді өшіру. Бұл Telegram CloudStorage-тен және құрылғыдан барлығын өшіреді. Қайтару мүмкін емес.",
+    "Settings → scroll to the bottom → 🗑️ Reset All Data. This wipes everything from the server and the device. It cannot be undone.":"Параметрлер → ең төменге айналдырыңыз → 🗑️ Барлық деректерді өшіру. Бұл серверден және құрылғыдан барлығын өшіреді. Қайтару мүмкін емес.",
     "Is this app free?":"Қолданба тегін бе?",
     "Yes, completely free. No ads, no premium tier, no subscriptions. If you'd like to support development, reach out via the Contact section in Settings.":"Иә, толығымен тегін. Жарнама, премиум деңгей, жазылым жоқ. Әзірлеуді қолдағыңыз келсе, Параметрлердегі Байланыс бөлімі арқылы жазыңыз.",
     "Go to History to view all transactions":"Барлық транзакцияны көру үшін Тарихқа өтіңіз",
@@ -3563,11 +3603,11 @@ function ImportReviewModal({transactions,setTransactions,categories,accounts,set
 const FAQ_ITEMS=[
   {
     q:"Where is my data stored?",
-    a:"Your data is stored privately in Telegram CloudStorage, tied to your Telegram account. It's not visible to anyone else, including the app developer. It syncs automatically across devices when you log in with the same Telegram account."
+    a:"Your data is stored on a secure private database (Cloudflare D1), tied to your Telegram account ID. Your device also keeps a local copy for offline access. It syncs automatically across your devices when you log in with the same Telegram account."
   },
   {
     q:"Is my financial data shared with anyone?",
-    a:"No. Transaction amounts, account balances, and notes never leave your Telegram CloudStorage. The app only sends anonymous usage statistics (e.g., which features you use, what language you picked) to help improve the app — never your actual financial data."
+    a:"No. Your transactions and account balances are stored only in the private database for this app and your own device. They are never shared with third parties, sold, or used for advertising. The developer can see your data only for support purposes if you reach out."
   },
   {
     q:"How do exchange rates work?",
@@ -3607,7 +3647,7 @@ const FAQ_ITEMS=[
   },
   {
     q:"Can I use this app outside Telegram?",
-    a:"Currently no — the app is built as a Telegram Mini App and uses Telegram CloudStorage for your data. A standalone web/PWA version may come later if there's enough interest."
+    a:"Currently no — the app is a Telegram Mini App and uses your Telegram account ID for sign-in. A standalone web/PWA version may come later if there's enough interest."
   },
   {
     q:"How do I export my data?",
@@ -3615,11 +3655,11 @@ const FAQ_ITEMS=[
   },
   {
     q:"What if I lose my phone?",
-    a:"Your data is in Telegram CloudStorage, not on your phone. Just install Telegram on your new device, log into the same account, open the bot, and everything will sync."
+    a:"Your data is on the server, not on your phone. Install Telegram on your new device, log into the same account, open the bot — everything syncs back."
   },
   {
     q:"How can I delete all my data?",
-    a:"Settings → scroll to the bottom → 🗑️ Reset All Data. This wipes everything from your Telegram CloudStorage and the device. It cannot be undone."
+    a:"Settings → scroll to the bottom → 🗑️ Reset All Data. This wipes everything from the server and the device. It cannot be undone."
   },
   {
     q:"Is this app free?",
@@ -4787,13 +4827,17 @@ function App(){
   const[addMode,setAddMode]=useState("expense");
   const[selTxn,setSelTxn]=useState(null);
 
-  const save=(key,val)=>{STORE.set(key,val).catch(()=>{});};
-  const setAccounts=v=>{setAccountsRaw(v);save("ft_accounts",v);};
-  const setTransactions=v=>{setTransactionsRaw(v);LS.set("ft_transactions",v);}; // full array only to localStorage; CS updates happen per-txn
-  const setCategories=v=>{setCategoriesRaw(v);save("ft_categories",v);};
-  const setFixed=v=>{setFixedRaw(v);save("ft_fixed",v);};
-  const setGoals=v=>{setGoalsRaw(v);save("ft_goals",v);};
-  const setSettings=v=>{setSettingsRaw(v);save("ft_settings",v);};
+  // localStorage = offline cache. Server (Worker+D1) = source of truth.
+  // Each setter saves to LS immediately for offline reads, then pushes to server async.
+  // If the server push fails (network blip, worker offline), local state is preserved
+  // and the next successful sync will reconcile.
+  const save=(key,val)=>{LS.set(key,val);};
+  const setAccounts=v=>{setAccountsRaw(v);save("ft_accounts",v);if(API.available)API.saveState({accounts:v}).catch(e=>console.warn("[API] saveState accounts failed",e));};
+  const setTransactions=v=>{setTransactionsRaw(v);LS.set("ft_transactions",v);};
+  const setCategories=v=>{setCategoriesRaw(v);save("ft_categories",v);if(API.available)API.saveState({categories:v}).catch(e=>console.warn("[API] saveState categories failed",e));};
+  const setFixed=v=>{setFixedRaw(v);save("ft_fixed",v);if(API.available)API.saveState({fixed_expenses:v}).catch(e=>console.warn("[API] saveState fixed failed",e));};
+  const setGoals=v=>{setGoalsRaw(v);save("ft_goals",v);if(API.available)API.saveState({goals:v}).catch(e=>console.warn("[API] saveState goals failed",e));};
+  const setSettings=v=>{setSettingsRaw(v);save("ft_settings",v);if(API.available)API.saveState({settings:v}).catch(e=>console.warn("[API] saveState settings failed",e));};
 
   useEffect(()=>{
     let cancelled=false;
@@ -4926,6 +4970,69 @@ function App(){
       // Track this session for analytics — fire-and-forget, won't block anything
       track("app_open");
 
+      // ── SERVER SYNC PHASE ──
+      // After local state is rendered (offline-first), reconcile with the Worker+D1 server.
+      // On first run with server support, also push existing local data up via /api/data/migrate.
+      API.init();
+      if(API.available){
+        (async()=>{
+          try{
+            // One-shot migration: push existing local data on first server-aware run.
+            // /api/data/migrate uses ON CONFLICT DO NOTHING — safe to re-run, no overwrites.
+            if(!sets?.serverMigrated&&((txns&&txns.length>0)||(accs&&accs.length>0))){
+              console.log("[SYNC] First server run — migrating local data to server.");
+              await API.migrate({
+                transactions:txns||[],
+                state:{
+                  accounts:accs,categories:cats,fixed_expenses:fxd,goals:gls,
+                  settings:{...sets,serverMigrated:true,lastSyncedAt:Date.now()}
+                }
+              });
+              sets={...sets,serverMigrated:true};
+              LS.set("ft_settings",sets);
+            }
+
+            // Delta sync — pull all server-side changes since our last sync timestamp.
+            const since=sets?.lastSyncedAt||0;
+            const data=await API.sync(since);
+
+            // Apply transactions delta (adds + updates + deletes)
+            if((data.transactions&&data.transactions.length>0)||(data.deletedIds&&data.deletedIds.length>0)){
+              const map=new Map((txns||[]).map(t=>[t.id,t]));
+              for(const t of(data.transactions||[]))map.set(t.id,t);
+              for(const id of(data.deletedIds||[]))map.delete(id);
+              const mergedTxns=Array.from(map.values());
+              setTransactionsRaw(mergedTxns);
+              LS.set("ft_transactions",mergedTxns);
+            }
+
+            // Apply state delta (server fields override local where present)
+            if(data.state){
+              if(data.state.accounts!==null){setAccountsRaw(data.state.accounts);LS.set("ft_accounts",data.state.accounts);}
+              if(data.state.categories!==null){setCategoriesRaw(data.state.categories);LS.set("ft_categories",data.state.categories);}
+              if(data.state.fixed_expenses!==null){setFixedRaw(data.state.fixed_expenses);LS.set("ft_fixed",data.state.fixed_expenses);}
+              if(data.state.goals!==null){setGoalsRaw(data.state.goals);LS.set("ft_goals",data.state.goals);}
+              if(data.state.settings!==null){
+                const mergedSets={...sets,...data.state.settings,lastSyncedAt:data.serverTime};
+                setSettingsRaw(mergedSets);
+                LS.set("ft_settings",mergedSets);
+              }else{
+                const mergedSets={...sets,lastSyncedAt:data.serverTime};
+                setSettingsRaw(mergedSets);
+                LS.set("ft_settings",mergedSets);
+              }
+            }else{
+              const mergedSets={...sets,lastSyncedAt:data.serverTime};
+              setSettingsRaw(mergedSets);
+              LS.set("ft_settings",mergedSets);
+            }
+            console.log("[SYNC] Reconciled with server at",new Date(data.serverTime).toISOString());
+          }catch(e){
+            console.warn("[SYNC] Server sync failed — running offline. Will retry on next load:",e);
+          }
+        })();
+      }
+
       // Fetch live exchange rates in the background — refresh once per hour to avoid
       // hammering public APIs. Doesn't block app startup; if it fails, cached rates are used.
       try{
@@ -4956,15 +5063,15 @@ function App(){
 
   // Save a new transaction. Balance is derived (openingBalance + sum of txn effects) so we
   // no longer mutate accounts here — the displayed balance auto-updates via accountsWithBalances.
+  // Push to server (source of truth); localStorage update happens via setTransactions.
   const handleSaveTxn=useCallback((txn)=>{
     setTransactions([...transactions,txn]);
-    STORE.saveTransaction(txn).catch(()=>{});
+    if(API.available)API.saveTransaction(txn).catch(e=>console.warn("[API] saveTransaction failed",e));
   },[transactions]);
 
-  // Delete a transaction. Same as above: no balance mutation needed.
   const handleDeleteTxn=useCallback((id)=>{
     setTransactions(transactions.filter(t=>t.id!==id));
-    STORE.deleteTransaction(id).catch(()=>{});
+    if(API.available)API.deleteTransaction(id).catch(e=>console.warn("[API] deleteTransaction failed",e));
   },[transactions]);
 
   // Reset all data: clears both localStorage and CloudStorage, then reloads the app
@@ -4973,11 +5080,15 @@ function App(){
       // Clear localStorage keys used by this app
       ["ft_accounts","ft_categories","ft_settings","ft_fixed","ft_goals","ft_transactions","ft_init","ft_cs_migrated"]
         .forEach(k=>LS.remove(k));
-      // Clear CloudStorage — remove all ft_* keys
+      // Clear Telegram CloudStorage (legacy storage from pre-server era) — remove all ft_* keys
       if(CS_AVAILABLE){
         const keys=await csGetKeys();
         const ftKeys=keys.filter(k=>k.startsWith("ft_"));
         for(const k of ftKeys){await csRemoveItem(k);}
+      }
+      // Clear server-side data (source of truth as of public release)
+      if(API.available){
+        try{await API.reset();}catch(e){console.warn("[API] Server reset failed:",e);}
       }
     }catch(e){console.error("Reset error:",e);}
     // Hard reload to re-initialize with empty defaults

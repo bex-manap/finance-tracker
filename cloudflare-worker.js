@@ -52,6 +52,8 @@ export default {
     if (url.pathname.startsWith('/admin'))    return handleAdmin(request, env, url);
     // PDF bank statement parser — uses Anthropic vision to extract transactions
     if (url.pathname === '/parse-statement')  return handleParseStatement(request, env);
+    // Server-side user data storage (D1). Source of truth for txns + state.
+    if (url.pathname.startsWith('/api/data/')) return handleDataApi(request, env, url);
 
     return handleAnthropicProxy(request, env);
   },
@@ -2048,6 +2050,227 @@ Output shape (strict):
     console.error('parse-statement error:', e);
     return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: cors });
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// /api/data/* — server-side storage for user transactions and state (D1).
+// This is the source of truth (replacing Telegram CloudStorage). Each request
+// must include a valid Telegram WebApp `initData` string for HMAC-based auth.
+// The `tg_id` is extracted from the verified initData — never trust the client.
+// ─────────────────────────────────────────────────────────────────────────────
+const dataCors = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type'
+};
+const jsonResp = (data, status = 200) => new Response(JSON.stringify(data), {
+  status,
+  headers: { ...dataCors, 'Content-Type': 'application/json' }
+});
+
+// Verify Telegram WebApp initData per https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
+// secret_key = HMAC_SHA256("WebAppData", bot_token); hash = HMAC_SHA256(secret_key, data_check_string)
+async function verifyInitData(initData, botToken) {
+  if (!initData || !botToken) return { ok: false, reason: 'missing' };
+  try {
+    const params = new URLSearchParams(initData);
+    const hash = params.get('hash');
+    if (!hash) return { ok: false, reason: 'no-hash' };
+    params.delete('hash');
+    // Sort keys alphabetically, join as key=value\nkey=value
+    const dataCheckString = [...params.entries()]
+      .sort((a, b) => a[0] < b[0] ? -1 : 1)
+      .map(([k, v]) => `${k}=${v}`)
+      .join('\n');
+    const enc = new TextEncoder();
+    const secretKeyKey = await crypto.subtle.importKey(
+      'raw', enc.encode('WebAppData'),
+      { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+    );
+    const secretKeyBuf = await crypto.subtle.sign('HMAC', secretKeyKey, enc.encode(botToken));
+    const dataKey = await crypto.subtle.importKey(
+      'raw', secretKeyBuf,
+      { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+    );
+    const calcBuf = await crypto.subtle.sign('HMAC', dataKey, enc.encode(dataCheckString));
+    const calcHash = Array.from(new Uint8Array(calcBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+    if (calcHash !== hash) return { ok: false, reason: 'bad-hash' };
+    const userJson = params.get('user');
+    if (!userJson) return { ok: false, reason: 'no-user' };
+    const user = JSON.parse(userJson);
+    if (!user || !user.id) return { ok: false, reason: 'bad-user' };
+    // Reject auth_date older than 24h — limits replay window
+    const authDate = parseInt(params.get('auth_date') || '0', 10);
+    if (Date.now() / 1000 - authDate > 86400) return { ok: false, reason: 'expired' };
+    return { ok: true, user };
+  } catch (e) {
+    return { ok: false, reason: 'parse-error', error: e.message };
+  }
+}
+
+async function ensureDataTables(env) {
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS user_transactions (
+      tg_id INTEGER NOT NULL,
+      txn_id TEXT NOT NULL,
+      data TEXT NOT NULL,
+      updated_at INTEGER NOT NULL,
+      deleted INTEGER DEFAULT 0,
+      PRIMARY KEY (tg_id, txn_id)
+    )
+  `).run();
+  await env.DB.prepare(`
+    CREATE INDEX IF NOT EXISTS idx_user_txn_updated
+    ON user_transactions(tg_id, updated_at)
+  `).run();
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS user_state (
+      tg_id INTEGER PRIMARY KEY,
+      accounts TEXT,
+      categories TEXT,
+      fixed_expenses TEXT,
+      goals TEXT,
+      settings TEXT,
+      updated_at INTEGER NOT NULL
+    )
+  `).run();
+}
+
+async function handleDataApi(request, env, url) {
+  if (request.method === 'OPTIONS') return new Response(null, { headers: dataCors });
+  if (request.method !== 'POST')    return jsonResp({ error: 'Method not allowed' }, 405);
+  let body;
+  try { body = await request.json(); }
+  catch { return jsonResp({ error: 'Invalid JSON' }, 400); }
+  const auth = await verifyInitData(body.initData, env.TELEGRAM_BOT_TOKEN);
+  if (!auth.ok) return jsonResp({ error: 'Auth failed', reason: auth.reason }, 401);
+  const tg_id = auth.user.id;
+  try {
+    await ensureDataTables(env);
+    const sub = url.pathname.slice('/api/data/'.length);
+    if (sub === 'sync')       return jsonResp(await dataSync(env, tg_id, body));
+    if (sub === 'txn')        return jsonResp(await dataSaveTxn(env, tg_id, body));
+    if (sub === 'txn-delete') return jsonResp(await dataDeleteTxn(env, tg_id, body));
+    if (sub === 'state')      return jsonResp(await dataSaveState(env, tg_id, body));
+    if (sub === 'migrate')    return jsonResp(await dataMigrate(env, tg_id, body));
+    if (sub === 'reset')      return jsonResp(await dataReset(env, tg_id));
+    return jsonResp({ error: 'Not found' }, 404);
+  } catch (e) {
+    console.error('[data-api]', e);
+    return jsonResp({ error: 'Internal error', detail: e.message }, 500);
+  }
+}
+
+// Delta-sync: return all changes since `body.since` (ms epoch). 0 = full pull.
+async function dataSync(env, tg_id, body) {
+  const since = parseInt(body.since) || 0;
+  const txnRes = await env.DB.prepare(`
+    SELECT txn_id, data, updated_at, deleted
+    FROM user_transactions
+    WHERE tg_id = ? AND updated_at > ?
+  `).bind(tg_id, since).all();
+  const transactions = [];
+  const deletedIds = [];
+  for (const r of (txnRes.results || [])) {
+    if (r.deleted) deletedIds.push(r.txn_id);
+    else { try { transactions.push(JSON.parse(r.data)); } catch {} }
+  }
+  const sRow = await env.DB.prepare(`
+    SELECT accounts, categories, fixed_expenses, goals, settings, updated_at
+    FROM user_state WHERE tg_id = ?
+  `).bind(tg_id).first();
+  let state = null;
+  if (sRow && sRow.updated_at > since) {
+    const parse = (v) => { if (!v) return null; try { return JSON.parse(v); } catch { return null; } };
+    state = {
+      accounts: parse(sRow.accounts),
+      categories: parse(sRow.categories),
+      fixed_expenses: parse(sRow.fixed_expenses),
+      goals: parse(sRow.goals),
+      settings: parse(sRow.settings),
+      updated_at: sRow.updated_at
+    };
+  }
+  return { ok: true, transactions, deletedIds, state, serverTime: Date.now() };
+}
+
+async function dataSaveTxn(env, tg_id, body) {
+  const txn = body.txn;
+  if (!txn || !txn.id) return { ok: false, error: 'Missing txn' };
+  const now = Date.now();
+  await env.DB.prepare(`
+    INSERT INTO user_transactions (tg_id, txn_id, data, updated_at, deleted)
+    VALUES (?, ?, ?, ?, 0)
+    ON CONFLICT(tg_id, txn_id) DO UPDATE SET
+      data = excluded.data, updated_at = excluded.updated_at, deleted = 0
+  `).bind(tg_id, txn.id, JSON.stringify(txn), now).run();
+  return { ok: true, updated_at: now };
+}
+
+async function dataDeleteTxn(env, tg_id, body) {
+  if (!body.txn_id) return { ok: false, error: 'Missing txn_id' };
+  const now = Date.now();
+  await env.DB.prepare(`
+    UPDATE user_transactions SET deleted = 1, updated_at = ?
+    WHERE tg_id = ? AND txn_id = ?
+  `).bind(now, tg_id, body.txn_id).run();
+  return { ok: true, updated_at: now };
+}
+
+async function dataSaveState(env, tg_id, body) {
+  const now = Date.now();
+  // Only fields explicitly provided are written — others stay as-is via COALESCE
+  await env.DB.prepare(`
+    INSERT INTO user_state (tg_id, accounts, categories, fixed_expenses, goals, settings, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(tg_id) DO UPDATE SET
+      accounts = COALESCE(excluded.accounts, user_state.accounts),
+      categories = COALESCE(excluded.categories, user_state.categories),
+      fixed_expenses = COALESCE(excluded.fixed_expenses, user_state.fixed_expenses),
+      goals = COALESCE(excluded.goals, user_state.goals),
+      settings = COALESCE(excluded.settings, user_state.settings),
+      updated_at = excluded.updated_at
+  `).bind(
+    tg_id,
+    body.accounts != null ? JSON.stringify(body.accounts) : null,
+    body.categories != null ? JSON.stringify(body.categories) : null,
+    body.fixed_expenses != null ? JSON.stringify(body.fixed_expenses) : null,
+    body.goals != null ? JSON.stringify(body.goals) : null,
+    body.settings != null ? JSON.stringify(body.settings) : null,
+    now
+  ).run();
+  return { ok: true, updated_at: now };
+}
+
+// Bulk migrate — used once per user when upgrading from CloudStorage to server.
+// Idempotent: existing rows are not overwritten (uses ON CONFLICT DO NOTHING).
+async function dataMigrate(env, tg_id, body) {
+  const now = Date.now();
+  const txns = Array.isArray(body.transactions) ? body.transactions : [];
+  // D1 supports batch inserts via .batch()
+  if (txns.length > 0) {
+    const stmt = env.DB.prepare(`
+      INSERT INTO user_transactions (tg_id, txn_id, data, updated_at, deleted)
+      VALUES (?, ?, ?, ?, 0)
+      ON CONFLICT(tg_id, txn_id) DO NOTHING
+    `);
+    const batched = txns.filter(t => t && t.id).map(t => stmt.bind(tg_id, t.id, JSON.stringify(t), now));
+    // D1 has a per-batch size limit; chunk to be safe
+    for (let i = 0; i < batched.length; i += 50) {
+      await env.DB.batch(batched.slice(i, i + 50));
+    }
+  }
+  if (body.state) {
+    await dataSaveState(env, tg_id, body.state);
+  }
+  return { ok: true, count: txns.length };
+}
+
+// Wipe all server-side data for this user. Used by the "Reset All Data" button.
+async function dataReset(env, tg_id) {
+  await env.DB.prepare(`DELETE FROM user_transactions WHERE tg_id = ?`).bind(tg_id).run();
+  await env.DB.prepare(`DELETE FROM user_state WHERE tg_id = ?`).bind(tg_id).run();
+  return { ok: true };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
