@@ -864,6 +864,7 @@ const TRANSLATIONS={
     "Skip":"Пропустить","Continue":"Далее","Back":"Назад",
     "Transfer ":"Перевод","Bank":"Банк","Crypto":"Крипто",
     "ask pet":"спросить","hide":"скрыть",
+    "Deficit":"Дефицит",
     "Overview":"Обзор","Due:":"Срок:","of each month":"числа каждого месяца",
     "This wk":"Эта нед.","Last wk":"Пр. нед.",
     "Food":"Питание","Transport":"Транспорт","Housing":"Жильё","Entertainment":"Развлечения",
@@ -1008,6 +1009,7 @@ const TRANSLATIONS={
     "Skip":"Өткізу","Continue":"Жалғастыру","Back":"Артқа",
     "Bank":"Банк","Crypto":"Крипто",
     "ask pet":"сұрау","hide":"жасыру",
+    "Deficit":"Тапшылық","1W":"1 ап","1M":"1 ай","All":"бәрі",
     "Overview":"Шолу","Due:":"Мерзімі:","of each month":"ай сайын",
     "This wk":"Осы апта","Last wk":"Өткен апта",
     "Food":"Тамақ","Transport":"Көлік","Housing":"Тұрғын үй","Entertainment":"Ойын-сауық",
@@ -1987,6 +1989,15 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,goals,settin
   const monthTxns=transactions.filter(tx=>sameMonth(tx.date,now.getFullYear(),now.getMonth()));
   const monthIncome=monthTxns.filter(t=>t.type==="income").reduce((s,t)=>s+toKZT(t.amount,t.currency,exchangeRates),0);
   const monthExpense=monthTxns.filter(t=>t.type==="expense").reduce((s,t)=>s+toKZT(t.amount,t.currency,exchangeRates),0);
+  const [statPeriod,setStatPeriod]=useState("month");
+  const periodTxns=(()=>{
+    if(statPeriod==="week"){const cutoff=Date.now()-7*24*60*60*1000;return transactions.filter(tx=>new Date(tx.date).getTime()>=cutoff);}
+    if(statPeriod==="all")return transactions;
+    return monthTxns;
+  })();
+  const periodIncome=periodTxns.filter(t=>t.type==="income").reduce((s,t)=>s+toKZT(t.amount,t.currency,exchangeRates),0);
+  const periodExpense=periodTxns.filter(t=>t.type==="expense").reduce((s,t)=>s+toKZT(t.amount,t.currency,exchangeRates),0);
+  const periodNet=periodIncome-periodExpense;
   // Quiet days from settings: dates the user explicitly marked as "no spending" via the Home button.
   // Stored as an array of "YYYY-M-D" strings in settings.quietDays so it persists with all other prefs.
   const quietDaysSet=useMemo(()=>new Set(settings.quietDays||[]),[settings.quietDays]);
@@ -2115,19 +2126,28 @@ function HomeScreen({accounts,transactions,categories,fixedExpenses,goals,settin
             {balanceHidden?"••••••":fmtAmt(total,selectedCurrency)}
           </div>
 
-          {/* 3-column mini stats: income / spent / saved (this month) */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,paddingTop:10,borderTop:`1px solid ${t.border}`,position:"relative"}}>
-            <div>
-              <div style={{fontSize:9,color:t.textMuted,marginBottom:2,textTransform:"uppercase",letterSpacing:"0.4px"}}>{tr("Income",settings.uiLanguage)}</div>
-              <div style={{fontSize:12,fontWeight:600,color:"#10b981",fontFamily:"ui-monospace,monospace"}}>+{fmtCompact(fromKZT(monthIncome,selectedCurrency,exchangeRates))}</div>
+          {/* Period selector + 3-column mini stats */}
+          <div style={{paddingTop:10,borderTop:`1px solid ${t.border}`,position:"relative"}}>
+            <div style={{display:"flex",gap:4,marginBottom:8}}>
+              {[{k:"week",l:"1W"},{k:"month",l:"1M"},{k:"all",l:"All"}].map(({k,l})=>(
+                <button key={k} onClick={()=>{haptic();setStatPeriod(k);}} style={{background:statPeriod===k?t.accent+"22":t.bgInput,color:statPeriod===k?t.accent:t.textMuted,border:`1px solid ${statPeriod===k?t.accent+"66":t.border}`,borderRadius:8,padding:"3px 8px",fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:"system-ui,sans-serif"}}>
+                  {tr(l,settings.uiLanguage)}
+                </button>
+              ))}
             </div>
-            <div>
-              <div style={{fontSize:9,color:t.textMuted,marginBottom:2,textTransform:"uppercase",letterSpacing:"0.4px"}}>{tr("Spent",settings.uiLanguage)}</div>
-              <div style={{fontSize:12,fontWeight:600,color:"#ef4444",fontFamily:"ui-monospace,monospace"}}>−{fmtCompact(fromKZT(monthExpense,selectedCurrency,exchangeRates))}</div>
-            </div>
-            <div>
-              <div style={{fontSize:9,color:t.textMuted,marginBottom:2,textTransform:"uppercase",letterSpacing:"0.4px"}}>{tr("Saved",settings.uiLanguage)}</div>
-              <div style={{fontSize:12,fontWeight:600,color:"#fbbf24",fontFamily:"ui-monospace,monospace"}}>{fmtCompact(fromKZT(monthIncome-monthExpense,selectedCurrency,exchangeRates))}</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
+              <div>
+                <div style={{fontSize:9,color:t.textMuted,marginBottom:2,textTransform:"uppercase",letterSpacing:"0.4px"}}>{tr("Income",settings.uiLanguage)}</div>
+                <div style={{fontSize:12,fontWeight:600,color:"#10b981",fontFamily:"ui-monospace,monospace"}}>+{fmtCompact(fromKZT(periodIncome,selectedCurrency,exchangeRates))}</div>
+              </div>
+              <div>
+                <div style={{fontSize:9,color:t.textMuted,marginBottom:2,textTransform:"uppercase",letterSpacing:"0.4px"}}>{tr("Spent",settings.uiLanguage)}</div>
+                <div style={{fontSize:12,fontWeight:600,color:"#ef4444",fontFamily:"ui-monospace,monospace"}}>−{fmtCompact(fromKZT(periodExpense,selectedCurrency,exchangeRates))}</div>
+              </div>
+              <div>
+                <div style={{fontSize:9,color:t.textMuted,marginBottom:2,textTransform:"uppercase",letterSpacing:"0.4px"}}>{periodNet<0?tr("Deficit",settings.uiLanguage):tr("Saved",settings.uiLanguage)}</div>
+                <div style={{fontSize:12,fontWeight:600,color:periodNet<0?"#ef4444":"#fbbf24",fontFamily:"ui-monospace,monospace"}}>{periodNet<0?"−":"+"}{fmtCompact(fromKZT(Math.abs(periodNet),selectedCurrency,exchangeRates))}</div>
+              </div>
             </div>
           </div>
 
