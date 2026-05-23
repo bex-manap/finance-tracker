@@ -14,34 +14,54 @@
 // D1 binding required:
 //   DB — a D1 database. See setup-db.sql for schema. Bind it in Worker → Settings → Variables → D1 Database Bindings.
 
-const WELCOME_MESSAGE = `👋 *Welcome to Finance Tracker!*
+// Welcome messages keyed by ui language. Picked based on Telegram user's `language_code`.
+const WELCOME_MESSAGES = {
+  English: `👋 Hi! Welcome to Saqta — your personal financial assistant
 
-Your personal money companion — right inside Telegram.
+Here's how it works:
+🐶 Get AI pet — it will help you grow your savings (and grumble a bit when you overspend).
+🏦 Manage all accounts in one place — from traditional banks to crypto (USDT & BTC) with auto-updated rates.
+📊 Say goodbye to budget deficits — smart analytics and spend heatmaps will show exactly where your money goes.
 
-✨ *What you can do:*
+Open the app and choose your pet! 👇`,
 
-💰 *Track your money*
-Log income, expenses, and transfers across multiple bank and crypto accounts.
+  Russian: `👋 Привет!
 
-🏦 *Multiple accounts, multiple currencies*
-Bank accounts (KZT, USD, EUR) and crypto wallets (USDT, BTC, ETH) — live exchange rates auto-update hourly.
+Это Saqta — твой карманный финансовый помощник.
 
-📊 *Smart analytics*
-Monthly breakdowns, category pie charts, and a daily spending heatmap.
+Здесь всё просто:
+🐶 Заведи питомца — он будет помогать вместе с твоими накоплениями (или ворчать за лишние траты).
+🏦 Управляй всеми счетами — от Kaspi и Freedom до крипты в USDT и BTC с автокурсом.
+📊 Забывай про дефицит — умная аналитика и тепловые карты покажут, куда уходят деньги.
 
-🐶🐱 *Your AI money coach*
-Pick a dog or cat companion that reacts to every transaction.
+Переходи в приложение и выбери своего питомца! 👇`,
 
-🎯 *Savings goals*
-Set targets, see progress with fun comparisons (250 coffees, 91 pizzas, etc).
+  Kazakh: `👋 Сәлем!
 
-🌐 *Synced across devices*
-Your data follows you everywhere, privately tied to your Telegram account.
+Бұл Saqta — сенің қалтаңдағы қаржылық көмекшің.
 
-🔒 *Private by default*
-Your data is yours alone. No one else can see your transactions.
+Мұнда бәрі оңай:
+🐶 Виртуалды үй жануарын ал — ол саған ақша сақтауға көмектеседі (немесе артық шығындарың үшін кейіп сөйлейді).
+🏦 Барлық шоттарыңды басқар — Kaspi мен Freedom-нан бастап, автоматты бағамы бар USDT және BTC криптасына дейін.
+📊 Қаржы тапшылығын ұмыт — ақылды аналитика мен шығындардың жылу картасы ақшаның қайда кетіп жатқанын көрсетеді.
 
-Tap the button below to get started! 👇`;
+Қосымшаға өтіп, өз үй жануарыңды таңда! 👇`
+};
+
+// Button label per language — shown on the inline keyboard below the welcome message
+const OPEN_APP_BUTTON = {
+  English: '💰 Open Finance Tracker',
+  Russian: '💰 Открыть Finance Tracker',
+  Kazakh: '💰 Finance Tracker-ді ашу'
+};
+
+// Map a Telegram language_code (e.g. "ru", "ru-RU", "kk", "kz") to one of our 3 supported langs
+function pickWelcomeLang(code) {
+  const c = (code || '').toLowerCase();
+  if (c.startsWith('ru')) return 'Russian';
+  if (c.startsWith('kk') || c.startsWith('kz')) return 'Kazakh';
+  return 'English';
+}
 
 export default {
   async fetch(request, env) {
@@ -1856,9 +1876,11 @@ async function handleTelegramWebhook(request, env) {
     const text = message.text.trim();
 
     if (text === '/start' || text === '/help') {
-      await sendTelegramMessage(env, chatId, WELCOME_MESSAGE, {
+      // Pick the welcome message based on the user's Telegram language. Falls back to English.
+      const lang = pickWelcomeLang(message.from?.language_code);
+      await sendTelegramMessage(env, chatId, WELCOME_MESSAGES[lang] || WELCOME_MESSAGES.English, {
         parse_mode: 'Markdown',
-        reply_markup: { inline_keyboard: [[{ text: '💰 Open Finance Tracker', web_app: { url: env.APP_URL } }]] }
+        reply_markup: { inline_keyboard: [[{ text: OPEN_APP_BUTTON[lang] || OPEN_APP_BUTTON.English, web_app: { url: env.APP_URL } }]] }
       });
     }
     return new Response('OK', { status: 200 });

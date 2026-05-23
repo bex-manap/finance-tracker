@@ -427,12 +427,12 @@ const BANK_PRESETS=[
   {name:"Bank CenterCredit",logo:"logos/bcc.svg?v=2",icon:"🏦",color:"#0ea5e9"},
 ];
 const CRYPTO_PRESETS=[
-  {name:"Binance",icon:"₿",color:"#f59e0b"},
-  {name:"Redot Pay",icon:"💎",color:"#8b5cf6"},
-  {name:"Bybit",icon:"🪙",color:"#ffd700"},
-  {name:"OKX",icon:"⚡",color:"#3b82f6"},
-  {name:"MetaMask",icon:"🦊",color:"#f97316"},
-  {name:"Trust Wallet",icon:"🛡️",color:"#10b981"},
+  {name:"Binance",logo:"logos/binance.svg?v=1",icon:"₿",color:"#f59e0b"},
+  {name:"Redot Pay",logo:"logos/redot.svg?v=1",icon:"💎",color:"#e31b38"},
+  {name:"Bybit",logo:"logos/bybit.svg?v=1",icon:"🪙",color:"#f7a600"},
+  {name:"OKX",logo:"logos/okx.svg?v=1",icon:"⚡",color:"#111111"},
+  {name:"MetaMask",logo:"logos/metamask.svg?v=1",icon:"🦊",color:"#f6851b"},
+  {name:"Trust Wallet",logo:"logos/trust_wallet.svg?v=1",icon:"🛡️",color:"#0500ff"},
 ];
 const DEF_ACCOUNTS=[];
 const DEF_FIXED=[];
@@ -4119,22 +4119,32 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
           })}
           <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${t.border}`}}>
             <div style={{fontSize:11,fontWeight:700,color:t.textMuted,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:8}}>Add new account</div>
-            {/* Quick-pick chips for Kazakhstan banks that aren't already added */}
+            {/* Quick-pick chips for preset banks + crypto wallets not already added.
+                Tap a chip → name + type + icon pre-fill the form; user enters balance and presses + */}
             {(()=>{
               const taken=new Set(accounts.map(a=>a.name.toLowerCase()));
-              const avail=BANK_PRESETS.filter(p=>!taken.has(p.name.toLowerCase()));
-              if(avail.length===0)return null;
+              const banks=BANK_PRESETS.filter(p=>!taken.has(p.name.toLowerCase()));
+              const cryptos=CRYPTO_PRESETS.filter(p=>!taken.has(p.name.toLowerCase()));
+              if(banks.length===0&&cryptos.length===0)return null;
+              const renderChip=(p,type)=>(
+                <div key={p.name} onClick={()=>{haptic();setNewAccName(p.name);setNewAccType(type);setNewAccIcon(p.icon);}} style={{display:"flex",alignItems:"center",gap:6,background:t.bgInput,border:`1px solid ${newAccName===p.name?"#10b981":t.border}`,borderRadius:12,padding:"5px 10px 5px 5px",cursor:"pointer",fontSize:12,color:t.text}}>
+                  <BrandIcon logo={p.logo} icon={p.icon} color={p.color} size={22}/>
+                  <span>{p.name}</span>
+                </div>
+              );
               return(
                 <div style={{marginBottom:10}}>
-                  <div style={{fontSize:10,color:t.textMuted,marginBottom:6}}>Tap a bank to pre-fill, then enter starting balance and press +</div>
-                  <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-                    {avail.map(p=>(
-                      <div key={p.name} onClick={()=>{haptic();setNewAccName(p.name);setNewAccType("bank");setNewAccIcon(p.icon);}} style={{display:"flex",alignItems:"center",gap:6,background:t.bgInput,border:`1px solid ${newAccName===p.name?"#10b981":t.border}`,borderRadius:12,padding:"5px 10px 5px 5px",cursor:"pointer",fontSize:12,color:t.text}}>
-                        <BrandIcon logo={p.logo} icon={p.icon} color={p.color} size={22}/>
-                        <span>{p.name}</span>
-                      </div>
-                    ))}
-                  </div>
+                  <div style={{fontSize:10,color:t.textMuted,marginBottom:6}}>Tap a preset to pre-fill, then enter starting balance and press +</div>
+                  {banks.length>0&&(
+                    <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:cryptos.length>0?8:0}}>
+                      {banks.map(p=>renderChip(p,"bank"))}
+                    </div>
+                  )}
+                  {cryptos.length>0&&(
+                    <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                      {cryptos.map(p=>renderChip(p,"crypto"))}
+                    </div>
+                  )}
                 </div>
               );
             })()}
@@ -4151,8 +4161,8 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
                 if(!newAccName.trim())return;
                 const openBal=parseFloat(newAccBalance)||0;
                 const trimmed=newAccName.trim();
-                // If the name matches a known bank preset, auto-pick its logo/color
-                const preset=BANK_PRESETS.find(b=>b.name.toLowerCase()===trimmed.toLowerCase());
+                // If the name matches a known bank or crypto preset, auto-pick its logo/color
+                const preset=BANK_PRESETS.find(b=>b.name.toLowerCase()===trimmed.toLowerCase())||CRYPTO_PRESETS.find(c=>c.name.toLowerCase()===trimmed.toLowerCase());
                 onAccountsChange([...accounts,{id:uid(),name:trimmed,type:newAccType,currency:newAccType==="crypto"?"USDT":"KZT",openingBalance:openBal,logo:preset?.logo||null,icon:newAccIcon||(newAccType==="bank"?"🏦":"💰"),color:preset?.color||"#10b981",isActive:true}]);
                 track("account_create",{type:newAccType});
                 setNewAccName("");
@@ -4838,8 +4848,8 @@ function OnboardingScreen({tgUser,onComplete}){
               {CRYPTO_PRESETS.map(c=>{
                 const active=selectedCrypto.includes(c.name);
                 return(
-                  <div key={c.name} onClick={()=>toggleCrypto(c.name)} style={{...chipBase,...(active?chipActive:{}),display:"flex",alignItems:"center",gap:8}}>
-                    <span style={{fontSize:18}}>{c.icon}</span>
+                  <div key={c.name} onClick={()=>toggleCrypto(c.name)} style={{...chipBase,...(active?chipActive:{}),display:"flex",alignItems:"center",gap:8,paddingLeft:6}}>
+                    <BrandIcon logo={c.logo} icon={c.icon} color={c.color} size={26}/>
                     <span>{c.name}</span>
                     {active&&<span style={{fontSize:11,color:"#10b981"}}>✓</span>}
                   </div>
@@ -5313,12 +5323,12 @@ function App(){
   const t=useMemo(()=>mkTheme(settings.darkMode),[settings.darkMode]);
 
   // Accounts augmented with computed balance (derived from openingBalance + transaction effects).
-  // Logo + brand color are ALWAYS sourced from the current BANK_PRESETS (by account name) so
-  // that cache-busted versions and rebrands take effect everywhere without a data migration.
+  // Logo + brand color are ALWAYS sourced from the current BANK_PRESETS or CRYPTO_PRESETS (by account
+  // name) so cache-busted versions and rebrands take effect everywhere without a data migration.
   const accountsWithBalances=useMemo(()=>{
     const bal=computeBalances(accounts,transactions,settings.exchangeRates||{});
     return accounts.map(a=>{
-      const preset=BANK_PRESETS.find(b=>b.name===a.name);
+      const preset=BANK_PRESETS.find(b=>b.name===a.name)||CRYPTO_PRESETS.find(c=>c.name===a.name);
       return{...a,balance:bal[a.id]||0,logo:preset?.logo||a.logo||null,color:preset?.color||a.color||"#10b981"};
     });
   },[accounts,transactions,settings.exchangeRates]);
