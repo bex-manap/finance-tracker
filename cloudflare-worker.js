@@ -50,9 +50,9 @@ Open the app and choose your pet! 👇`,
 
 // Button label per language — shown on the inline keyboard below the welcome message
 const OPEN_APP_BUTTON = {
-  English: '💰 Open Finance Tracker',
-  Russian: '💰 Открыть Finance Tracker',
-  Kazakh: '💰 Finance Tracker-ді ашу'
+  English: '💰 Open Saqta',
+  Russian: '💰 Открыть Saqta',
+  Kazakh: '💰 Saqta-ны ашу'
 };
 
 // Map a Telegram language_code (e.g. "ru", "ru-RU", "kk", "kz") to one of our 3 supported langs

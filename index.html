@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-<title>Finance Tracker</title>
+<title>Saqta</title>
 <!-- Tabler Icons (outline webfont) — used in bottom navigation for cleaner, consistent visual weight than emoji.
      Use the @tabler/icons-webfont package on jsDelivr — it bundles the CSS + font files (.woff2)
      correctly. The cdnjs version only ships the CSS without the font files, so icons appear as empty squares. -->
@@ -120,7 +120,7 @@ input[type=date]{
 <div id="splash">
   <div style="font-size:48px;margin-bottom:16px">💰</div>
   <div class="spinner"></div>
-  <div style="font-size:18px;font-weight:700;color:#10b981;font-family:system-ui">Finance Tracker</div>
+  <div style="font-size:18px;font-weight:700;color:#10b981;font-family:system-ui">Saqta</div>
   <div id="splash-msg" style="font-size:13px;color:#64748b;margin-top:8px;padding:0 20px;text-align:center;max-width:320px">Loading...</div>
   <div id="splash-err" style="font-size:11px;color:#ef4444;margin-top:16px;padding:0 20px;text-align:left;max-width:320px;font-family:monospace;word-break:break-word;max-height:200px;overflow:auto"></div>
 </div>
@@ -1025,7 +1025,7 @@ const TRANSLATIONS={
     "isn't backed by any transactions. Reconcile to make your stats accurate.":"не подтверждено транзакциями. Сделайте сверку, чтобы статистика была точной.",
     "Reconcile now":"Сверить сейчас","Dismiss":"Скрыть","Opening balance":"Начальный баланс",
     "Month":"Месяц","All time":"Всё время",
-    "Welcome to Finance Tracker!":"Добро пожаловать!",
+    "Welcome to Saqta!":"Добро пожаловать в Saqta!",
     "Let's set things up. This takes about 30 seconds.":"Давайте всё настроим. Это займёт около 30 секунд.",
     "What should we call you?":"Как к вам обращаться?","Your name":"Ваше имя",
     "Your Banks":"Ваши банки","Select the banks you use. You can add more later.":"Выберите банки, которыми вы пользуетесь. Можно добавить ещё позже.",
@@ -1189,7 +1189,7 @@ const TRANSLATIONS={
     "isn't backed by any transactions. Reconcile to make your stats accurate.":"транзакциялармен расталмаған. Статистиканы дұрыстау үшін сверка жасаңыз.",
     "Reconcile now":"Қазір түзету","Dismiss":"Жасыру","Opening balance":"Бастапқы баланс",
     "Month":"Ай","All time":"Барлық уақыт",
-    "Welcome to Finance Tracker!":"Қош келдіңіз!",
+    "Welcome to Saqta!":"Saqta-ға қош келдіңіз!",
     "Let's set things up. This takes about 30 seconds.":"Бәрін баптап алайық. Шамамен 30 секунд.",
     "What should we call you?":"Сізге қалай қаратылады?","Your name":"Атыңыз",
     "Your Banks":"Сіздің банктер","Select the banks you use. You can add more later.":"Қолданатын банктерді таңдаңыз. Кейін қосуға болады.",
@@ -2808,6 +2808,8 @@ function AnalyticsScreen({transactions,categories,settings,t}){
   const toDateStr=(d)=>d.toISOString().split("T")[0];
   const[pieFromDate,setPieFromDate]=useState(toDateStr(monthStart));
   const[pieToDate,setPieToDate]=useState(toDateStr(today));
+  // Tracks which preset chip is "active" so we can highlight it. Cleared when user edits dates manually.
+  const[selectedPreset,setSelectedPreset]=useState("thisMonth");
   // Quick-select preset chips for common ranges
   const applyRangePreset=(presetKey)=>{
     const t=new Date();
@@ -2818,6 +2820,7 @@ function AnalyticsScreen({transactions,categories,settings,t}){
     else if(presetKey==="last7")from=new Date(t.getFullYear(),t.getMonth(),t.getDate()-6);
     else if(presetKey==="thisYear")from=new Date(t.getFullYear(),0,1);
     setPieFromDate(toDateStr(from));setPieToDate(toDateStr(to));
+    setSelectedPreset(presetKey);
   };
 
   // ─ Calendar (daily heatmap) filter: month-by-month navigation, separate from pie ─
@@ -3011,20 +3014,23 @@ function AnalyticsScreen({transactions,categories,settings,t}){
       <div style={{background:t.bgCard,borderRadius:16,padding:"16px",border:`1px solid ${t.border}`,marginBottom:16}}>
         <div style={{fontSize:15,fontWeight:600,color:t.text,fontFamily:"system-ui,sans-serif",marginBottom:10}}>{tr("Spending by Category",settings.uiLanguage)}</div>
 
-        {/* Quick preset chips */}
+        {/* Quick preset chips — active one is highlighted via selectedPreset state */}
         <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
-          {presets.map(({k,l})=>(
-            <button key={k} onClick={()=>applyRangePreset(k)} style={{background:t.bgInput,color:t.textMuted,border:`1px solid ${t.border}`,borderRadius:14,padding:"5px 12px",fontSize:11,cursor:"pointer",fontWeight:500}}>
-              {l}
-            </button>
-          ))}
+          {presets.map(({k,l})=>{
+            const active=selectedPreset===k;
+            return(
+              <button key={k} onClick={()=>applyRangePreset(k)} style={{background:active?t.accent+"22":t.bgInput,color:active?t.accent:t.textMuted,border:`1px solid ${active?t.accent+"66":t.border}`,borderRadius:14,padding:"5px 12px",fontSize:11,cursor:"pointer",fontWeight:600,fontFamily:"system-ui,sans-serif"}}>
+                {l}
+              </button>
+            );
+          })}
         </div>
 
         {/* Custom date range pickers */}
         <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:14,padding:"10px 12px",background:t.bgInput,borderRadius:10}}>
-          <input type="date" value={pieFromDate} onChange={e=>setPieFromDate(e.target.value)} style={{flex:1,minWidth:0,background:"transparent",color:t.text,border:"none",fontSize:12,padding:0,fontFamily:"system-ui,sans-serif",WebkitAppearance:"none"}}/>
+          <input type="date" value={pieFromDate} onChange={e=>{setPieFromDate(e.target.value);setSelectedPreset(null);}} style={{flex:1,minWidth:0,background:"transparent",color:t.text,border:"none",fontSize:12,padding:0,fontFamily:"system-ui,sans-serif",WebkitAppearance:"none"}}/>
           <span style={{color:t.textMuted,fontSize:12}}>→</span>
-          <input type="date" value={pieToDate} onChange={e=>setPieToDate(e.target.value)} style={{flex:1,minWidth:0,background:"transparent",color:t.text,border:"none",fontSize:12,padding:0,fontFamily:"system-ui,sans-serif",WebkitAppearance:"none"}}/>
+          <input type="date" value={pieToDate} onChange={e=>{setPieToDate(e.target.value);setSelectedPreset(null);}} style={{flex:1,minWidth:0,background:"transparent",color:t.text,border:"none",fontSize:12,padding:0,fontFamily:"system-ui,sans-serif",WebkitAppearance:"none"}}/>
         </div>
 
         {/* Summary numbers for the selected range */}
@@ -3105,7 +3111,7 @@ function AnalyticsScreen({transactions,categories,settings,t}){
                 <div style={{fontSize:11,fontWeight:600,color:hasSpending?t.text:t.textMuted,lineHeight:1}}>{day}</div>
                 {hasSpending&&(
                   <div style={{fontSize:9,fontWeight:600,color:"#ef4444",fontFamily:"monospace",marginTop:2,lineHeight:1}}>
-                    {fmtCompact(displayAmount)}
+                    {sym[selectedCurrency]||selectedCurrency}{fmtCompact(displayAmount)}
                   </div>
                 )}
               </div>
@@ -3372,8 +3378,8 @@ function HistoryScreen({transactions,accounts,categories,settings,onTxnClick,t})
           {accounts.map(a=>{
             const active=accountFilter.includes(a.id);
             return(
-              <button key={a.id} onClick={()=>{haptic();toggleAccountFilter(a.id);}} style={{background:active?t.accent+"22":t.bgInput,color:active?t.accent:t.textMuted,border:`1px solid ${active?t.accent+"66":t.border}`,borderRadius:14,padding:"5px 12px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"system-ui,sans-serif",flexShrink:0,whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:4}}>
-                <span>{a.icon}</span><span>{a.name}</span>
+              <button key={a.id} onClick={()=>{haptic();toggleAccountFilter(a.id);}} style={{background:active?t.accent+"22":t.bgInput,color:active?t.accent:t.textMuted,border:`1px solid ${active?t.accent+"66":t.border}`,borderRadius:14,padding:"4px 12px 4px 4px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"system-ui,sans-serif",flexShrink:0,whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
+                <BrandIcon logo={a.logo} icon={a.icon} color={a.color} size={20}/><span>{a.name}</span>
               </button>
             );
           })}
@@ -4788,7 +4794,7 @@ function OnboardingScreen({tgUser,onComplete}){
           <div>
             <div style={headerStyle}>
               <div style={{fontSize:64,marginBottom:16}}>💰</div>
-              <div style={titleStyle}>{tr("Welcome to Finance Tracker!",lang)}</div>
+              <div style={titleStyle}>{tr("Welcome to Saqta!",lang)}</div>
               <div style={subtitleStyle}>{tr("Let's set things up. This takes about 30 seconds.",lang)}</div>
             </div>
             {profilePic&&(
@@ -5353,7 +5359,7 @@ function App(){
     return(
       <div style={{height:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"#0a0f1e"}}>
         <div style={{fontSize:48,marginBottom:16}}>💰</div>
-        <div style={{fontFamily:"system-ui,sans-serif",fontSize:22,color:"#10b981",fontWeight:700}}>Finance Tracker</div>
+        <div style={{fontFamily:"system-ui,sans-serif",fontSize:22,color:"#10b981",fontWeight:700}}>Saqta</div>
         <div style={{fontSize:14,color:"#64748b",marginTop:8}}>Loading your data...</div>
       </div>
     );
