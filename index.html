@@ -1025,6 +1025,19 @@ const TRANSLATIONS={
     "isn't backed by any transactions. Reconcile to make your stats accurate.":"не подтверждено транзакциями. Сделайте сверку, чтобы статистика была точной.",
     "Reconcile now":"Сверить сейчас","Dismiss":"Скрыть","Opening balance":"Начальный баланс",
     "Month":"Месяц","All time":"Всё время",
+    "Welcome to Finance Tracker!":"Добро пожаловать!",
+    "Let's set things up. This takes about 30 seconds.":"Давайте всё настроим. Это займёт около 30 секунд.",
+    "What should we call you?":"Как к вам обращаться?","Your name":"Ваше имя",
+    "Your Banks":"Ваши банки","Select the banks you use. You can add more later.":"Выберите банки, которыми вы пользуетесь. Можно добавить ещё позже.",
+    "Add a custom bank":"Добавить свой банк","Bank name":"Название банка",
+    "Crypto Wallets":"Крипто-кошельки","Any crypto accounts? Skip if none.":"Есть крипто-счета? Пропустите, если нет.",
+    "Add a custom wallet":"Добавить свой кошелёк","Wallet name":"Название кошелька",
+    "Pick Your AI Companion":"Выберите ИИ-питомца","They'll react to every transaction you log. Pick a vibe.":"Он будет реагировать на каждую операцию. Выберите характер.",
+    "Dog":"Собака","Cat":"Кот",
+    "Loyal, enthusiastic, supportive":"Верный, энергичный, поддерживающий","Sassy, judgmental, dryly funny":"Дерзкий, ироничный, остроумный",
+    "Default Currency":"Основная валюта","What currency do you mostly use? You can switch any time.":"Какой валютой вы пользуетесь чаще? Можно сменить в любой момент.",
+    "Tenge":"Тенге","US Dollar":"Доллар США","Euro":"Евро","Tether (Crypto)":"Tether (крипто)",
+    "Start Tracking 🚀":"Начать 🚀",
     "Search notes...":"Поиск по заметкам…","All accounts":"Все счета","Apply":"Применить",
     "No transactions found":"Ничего не найдено",
     "Overview":"Обзор","Due:":"Срок:","of each month":"числа каждого месяца",
@@ -1176,6 +1189,19 @@ const TRANSLATIONS={
     "isn't backed by any transactions. Reconcile to make your stats accurate.":"транзакциялармен расталмаған. Статистиканы дұрыстау үшін сверка жасаңыз.",
     "Reconcile now":"Қазір түзету","Dismiss":"Жасыру","Opening balance":"Бастапқы баланс",
     "Month":"Ай","All time":"Барлық уақыт",
+    "Welcome to Finance Tracker!":"Қош келдіңіз!",
+    "Let's set things up. This takes about 30 seconds.":"Бәрін баптап алайық. Шамамен 30 секунд.",
+    "What should we call you?":"Сізге қалай қаратылады?","Your name":"Атыңыз",
+    "Your Banks":"Сіздің банктер","Select the banks you use. You can add more later.":"Қолданатын банктерді таңдаңыз. Кейін қосуға болады.",
+    "Add a custom bank":"Өз банкіңізді қосу","Bank name":"Банк аты",
+    "Crypto Wallets":"Крипто-әмияндар","Any crypto accounts? Skip if none.":"Крипто-шотыңыз бар ма? Жоқ болса өткізіп жіберіңіз.",
+    "Add a custom wallet":"Өз әмияныңызды қосу","Wallet name":"Әмиян аты",
+    "Pick Your AI Companion":"ЖИ-серігіңізді таңдаңыз","They'll react to every transaction you log. Pick a vibe.":"Әр операцияңызға серігіңіз пікір білдіреді. Мінезді таңдаңыз.",
+    "Dog":"Ит","Cat":"Мысық",
+    "Loyal, enthusiastic, supportive":"Адал, көңілді, қолдаушы","Sassy, judgmental, dryly funny":"Өткір, сыни, әзіл-қалжыңды",
+    "Default Currency":"Негізгі валюта","What currency do you mostly use? You can switch any time.":"Қандай валютаны жиі қолданасыз? Кез келген уақытта ауыстыруға болады.",
+    "Tenge":"Теңге","US Dollar":"АҚШ доллары","Euro":"Еуро","Tether (Crypto)":"Tether (крипто)",
+    "Start Tracking 🚀":"Бастау 🚀",
     "Search notes...":"Жазбалардан іздеу…","All accounts":"Барлық шоттар","Apply":"Қолдану",
     "No transactions found":"Транзакциялар табылмады",
     "Overview":"Шолу","Due:":"Мерзімі:","of each month":"ай сайын",
@@ -1388,6 +1414,46 @@ function BrandIcon({logo,icon,color,size=32}){
   );
 }
 
+// Logo-aware account picker. Replaces the native <select> in the AddTxn flow so users see
+// bank logos (which HTML <option> can't render). Opens as a bottom sheet over the parent modal.
+function AccountSelect({accounts,value,onChange,placeholder,exclude,t,settings}){
+  const[open,setOpen]=useState(false);
+  const selected=accounts.find(a=>a.id===value);
+  const list=exclude?accounts.filter(a=>a.id!==exclude):accounts;
+  return(
+    <>
+      <div onClick={()=>setOpen(true)} style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"9px 12px",fontSize:15,cursor:"pointer",display:"flex",alignItems:"center",gap:10,boxSizing:"border-box"}}>
+        {selected?(
+          <>
+            <BrandIcon logo={selected.logo} icon={selected.icon} color={selected.color} size={26}/>
+            <span style={{flex:1,minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{selected.name} <span style={{color:t.textMuted}}>({selected.currency})</span></span>
+          </>
+        ):(
+          <span style={{flex:1,color:t.textMuted}}>{placeholder||"Select account"}</span>
+        )}
+        <span style={{color:t.textMuted,fontSize:11}}>▾</span>
+      </div>
+      {open&&(
+        <div onClick={(e)=>{if(e.target===e.currentTarget)setOpen(false);}} style={{position:"fixed",inset:0,background:t.modal,zIndex:200,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
+          <div className="slide-up" style={{background:t.bgCard,borderRadius:"20px 20px 0 0",maxHeight:"70vh",overflow:"auto",padding:"16px 16px calc(24px + env(safe-area-inset-bottom, 0px))"}}>
+            <div style={{fontSize:15,fontWeight:600,color:t.text,marginBottom:12,textAlign:"center"}}>{placeholder||"Select account"}</div>
+            {list.map(a=>(
+              <div key={a.id} onClick={()=>{onChange(a.id);setOpen(false);}} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 8px",borderRadius:10,cursor:"pointer",background:a.id===value?t.bgInput:"transparent",marginBottom:4}}>
+                <BrandIcon logo={a.logo} icon={a.icon} color={a.color} size={32}/>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:14,color:t.text,fontWeight:500}}>{a.name}</div>
+                  <div style={{fontSize:11,color:t.textMuted,fontFamily:"monospace"}}>{a.currency} · {fmtAmt(a.balance,a.currency)}</div>
+                </div>
+                {a.id===value&&<span style={{color:"#10b981",fontSize:16}}>✓</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 function Modal({open,onClose,title,children,t}){
   if(!open)return null;
   return(
@@ -1549,16 +1615,12 @@ function AddModal({open,onClose,accounts,categories,settings,onSave,t,initMode})
         </div>
         <div>
           <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>{tr("From Account",settings.uiLanguage)}</div>
-          <select value={accountId} onChange={e=>setAccountId(e.target.value)} style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"11px 14px",fontSize:15,cursor:"pointer"}}>
-            {accounts.map(a=><option key={a.id} value={a.id}>{a.icon} {a.name} ({a.currency})</option>)}
-          </select>
+          <AccountSelect accounts={accounts} value={accountId} onChange={setAccountId} placeholder={tr("From Account",settings.uiLanguage)} t={t} settings={settings}/>
         </div>
         {mode==="transfer"&&(
           <div>
             <div style={{fontSize:13,color:t.textMuted,marginBottom:5}}>{tr("To Account",settings.uiLanguage)}</div>
-            <select value={toAccountId} onChange={e=>setToAccountId(e.target.value)} style={{width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"11px 14px",fontSize:15,cursor:"pointer"}}>
-              {accounts.filter(a=>a.id!==accountId).map(a=><option key={a.id} value={a.id}>{a.icon} {a.name} ({a.currency})</option>)}
-            </select>
+            <AccountSelect accounts={accounts} value={toAccountId} onChange={setToAccountId} exclude={accountId} placeholder={tr("To Account",settings.uiLanguage)} t={t} settings={settings}/>
             {/* Cross-currency: show editable rate field with live default + arrival preview */}
             {selAcc&&toAcc&&selAcc.currency!==toAcc.currency&&(
               <div style={{marginTop:10,padding:"12px",background:t.bgCard2,borderRadius:10,display:"flex",flexDirection:"column",gap:10}}>
@@ -4602,6 +4664,9 @@ function OnboardingScreen({tgUser,onComplete}){
   const[customCryptoName,setCustomCryptoName]=useState("");
   const[pet,setPet]=useState("dog");
   const[currency,setCurrency]=useState("KZT");
+  // Default to auto-detected system language. User can override via the top-right picker.
+  // Choice flows into settings.uiLanguage at the end via the finish() handler.
+  const[lang,setLang]=useState(detectSystemLanguage());
 
   const toggleBank=(bankName)=>setSelectedBanks(s=>s.includes(bankName)?s.filter(x=>x!==bankName):[...s,bankName]);
   const toggleCrypto=(c)=>setSelectedCrypto(s=>s.includes(c)?s.filter(x=>x!==c):[...s,c]);
@@ -4660,6 +4725,7 @@ function OnboardingScreen({tgUser,onComplete}){
       profilePicture:profilePic,
       aiPet:pet,
       selectedCurrency:currency,
+      uiLanguage:lang,
       accounts
     });
   };
@@ -4667,13 +4733,21 @@ function OnboardingScreen({tgUser,onComplete}){
   const STEPS=["Welcome","Banks","Crypto","Companion","Currency"];
 
   const containerStyle={
-    height:"100vh",
+    minHeight:"100vh",
     display:"flex",
     flexDirection:"column",
     background:"linear-gradient(160deg,#0a0f1e,#0f2027,#0a0f1e)",
     color:"#e2e8f0",
-    padding:"calc(env(safe-area-inset-top, 20px) + 40px) 20px calc(20px + env(safe-area-inset-bottom, 0px))",
+    // Extra bottom padding (50vh) gives the soft keyboard room to overlay without obscuring inputs;
+    // on iOS the keyboard doesn't resize the viewport, so we need scrollable space below the form.
+    padding:"calc(env(safe-area-inset-top, 20px) + 40px) 20px calc(50vh + env(safe-area-inset-bottom, 0px))",
     overflow:"auto"
+  };
+  // When user focuses an input on iOS, scroll it into the visible area above the keyboard.
+  // 300ms delay lets the keyboard finish animating up so the scroll target is accurate.
+  const scrollIntoViewOnFocus=(e)=>{
+    const el=e.target;
+    setTimeout(()=>{if(el&&el.scrollIntoView)el.scrollIntoView({block:"center",behavior:"smooth"});},300);
   };
   const headerStyle={textAlign:"center",marginBottom:24};
   const titleStyle={fontSize:26,fontWeight:700,marginBottom:8};
@@ -4685,6 +4759,12 @@ function OnboardingScreen({tgUser,onComplete}){
 
   return(
     <div style={containerStyle}>
+      {/* Language picker — top-right. After onboarding, language is changed via Settings. */}
+      <div style={{position:"absolute",top:"calc(env(safe-area-inset-top, 20px) + 12px)",right:16,display:"flex",gap:4,zIndex:10}}>
+        {[{k:"English",l:"EN"},{k:"Russian",l:"RU"},{k:"Kazakh",l:"KZ"}].map(({k,l})=>(
+          <button key={k} onClick={()=>setLang(k)} style={{background:lang===k?"#10b981":"transparent",color:lang===k?"#fff":"#94a3b8",border:`1px solid ${lang===k?"#10b981":"#1e2d3d"}`,borderRadius:6,padding:"4px 8px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"system-ui,sans-serif"}}>{l}</button>
+        ))}
+      </div>
       {/* Progress dots */}
       <div style={{display:"flex",justifyContent:"center",gap:8,marginBottom:32}}>
         {STEPS.map((_,i)=>(
@@ -4698,16 +4778,16 @@ function OnboardingScreen({tgUser,onComplete}){
           <div>
             <div style={headerStyle}>
               <div style={{fontSize:64,marginBottom:16}}>💰</div>
-              <div style={titleStyle}>Welcome to Finance Tracker!</div>
-              <div style={subtitleStyle}>Let's set things up. This takes about 30 seconds.</div>
+              <div style={titleStyle}>{tr("Welcome to Finance Tracker!",lang)}</div>
+              <div style={subtitleStyle}>{tr("Let's set things up. This takes about 30 seconds.",lang)}</div>
             </div>
             {profilePic&&(
               <div style={{textAlign:"center",marginBottom:20}}>
                 <img src={profilePic} style={{width:72,height:72,borderRadius:"50%",objectFit:"cover",border:"2px solid #10b981"}} alt="profile"/>
               </div>
             )}
-            <div style={{fontSize:13,color:"#94a3b8",marginBottom:6}}>What should we call you?</div>
-            <input value={name} onChange={e=>setName(e.target.value)} placeholder="Your name" style={inputStyle} autoFocus/>
+            <div style={{fontSize:13,color:"#94a3b8",marginBottom:6}}>{tr("What should we call you?",lang)}</div>
+            <input value={name} onChange={e=>setName(e.target.value)} onFocus={scrollIntoViewOnFocus} placeholder={tr("Your name",lang)} style={inputStyle} autoFocus/>
           </div>
         )}
 
@@ -4716,8 +4796,8 @@ function OnboardingScreen({tgUser,onComplete}){
           <div>
             <div style={headerStyle}>
               <div style={{fontSize:48,marginBottom:12}}>🏦</div>
-              <div style={titleStyle}>Your Banks</div>
-              <div style={subtitleStyle}>Select the banks you use. You can add more later.</div>
+              <div style={titleStyle}>{tr("Your Banks",lang)}</div>
+              <div style={subtitleStyle}>{tr("Select the banks you use. You can add more later.",lang)}</div>
             </div>
             <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:16}}>
               {BANK_PRESETS.map(bank=>{
@@ -4738,9 +4818,9 @@ function OnboardingScreen({tgUser,onComplete}){
                 <span onClick={()=>toggleBank(n)} style={{cursor:"pointer",color:"#ef4444"}}>✕</span>
               </div>
             ))}
-            <div style={{fontSize:13,color:"#94a3b8",marginTop:16,marginBottom:6}}>Add a custom bank</div>
+            <div style={{fontSize:13,color:"#94a3b8",marginTop:16,marginBottom:6}}>{tr("Add a custom bank",lang)}</div>
             <div style={{display:"flex",gap:8}}>
-              <input value={customBankName} onChange={e=>setCustomBankName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addCustomBank()} placeholder="Bank name" style={{...inputStyle,flex:1}}/>
+              <input value={customBankName} onChange={e=>setCustomBankName(e.target.value)} onFocus={scrollIntoViewOnFocus} onKeyDown={e=>e.key==="Enter"&&addCustomBank()} placeholder={tr("Bank name",lang)} style={{...inputStyle,flex:1}}/>
               <button onClick={addCustomBank} style={{background:"#10b981",color:"#fff",border:"none",borderRadius:12,padding:"0 20px",fontSize:20,fontWeight:700,cursor:"pointer",flexShrink:0}}>+</button>
             </div>
           </div>
@@ -4751,8 +4831,8 @@ function OnboardingScreen({tgUser,onComplete}){
           <div>
             <div style={headerStyle}>
               <div style={{fontSize:48,marginBottom:12}}>₿</div>
-              <div style={titleStyle}>Crypto Wallets</div>
-              <div style={subtitleStyle}>Any crypto accounts? Skip if none.</div>
+              <div style={titleStyle}>{tr("Crypto Wallets",lang)}</div>
+              <div style={subtitleStyle}>{tr("Any crypto accounts? Skip if none.",lang)}</div>
             </div>
             <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:16}}>
               {CRYPTO_PRESETS.map(c=>{
@@ -4772,9 +4852,9 @@ function OnboardingScreen({tgUser,onComplete}){
                 <span onClick={()=>toggleCrypto(n)} style={{cursor:"pointer",color:"#ef4444"}}>✕</span>
               </div>
             ))}
-            <div style={{fontSize:13,color:"#94a3b8",marginTop:16,marginBottom:6}}>Add a custom wallet</div>
+            <div style={{fontSize:13,color:"#94a3b8",marginTop:16,marginBottom:6}}>{tr("Add a custom wallet",lang)}</div>
             <div style={{display:"flex",gap:8}}>
-              <input value={customCryptoName} onChange={e=>setCustomCryptoName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addCustomCrypto()} placeholder="Wallet name" style={{...inputStyle,flex:1}}/>
+              <input value={customCryptoName} onChange={e=>setCustomCryptoName(e.target.value)} onFocus={scrollIntoViewOnFocus} onKeyDown={e=>e.key==="Enter"&&addCustomCrypto()} placeholder={tr("Wallet name",lang)} style={{...inputStyle,flex:1}}/>
               <button onClick={addCustomCrypto} style={{background:"#10b981",color:"#fff",border:"none",borderRadius:12,padding:"0 20px",fontSize:20,fontWeight:700,cursor:"pointer",flexShrink:0}}>+</button>
             </div>
           </div>
@@ -4785,13 +4865,13 @@ function OnboardingScreen({tgUser,onComplete}){
           <div>
             <div style={headerStyle}>
               <div style={{fontSize:48,marginBottom:12}}>🤖</div>
-              <div style={titleStyle}>Pick Your AI Companion</div>
-              <div style={subtitleStyle}>They'll react to every transaction you log. Pick a vibe.</div>
+              <div style={titleStyle}>{tr("Pick Your AI Companion",lang)}</div>
+              <div style={subtitleStyle}>{tr("They'll react to every transaction you log. Pick a vibe.",lang)}</div>
             </div>
             <div style={{display:"flex",gap:12}}>
               {[
-                {k:"dog",emoji:"🐶",label:"Dog",desc:"Loyal, enthusiastic, supportive"},
-                {k:"cat",emoji:"🐱",label:"Cat",desc:"Sassy, judgmental, dryly funny"}
+                {k:"dog",emoji:"🐶",label:tr("Dog",lang),desc:tr("Loyal, enthusiastic, supportive",lang)},
+                {k:"cat",emoji:"🐱",label:tr("Cat",lang),desc:tr("Sassy, judgmental, dryly funny",lang)}
               ].map(({k,emoji,label,desc})=>{
                 const active=pet===k;
                 return(
@@ -4811,15 +4891,15 @@ function OnboardingScreen({tgUser,onComplete}){
           <div>
             <div style={headerStyle}>
               <div style={{fontSize:48,marginBottom:12}}>💱</div>
-              <div style={titleStyle}>Default Currency</div>
-              <div style={subtitleStyle}>What currency do you mostly use? You can switch any time.</div>
+              <div style={titleStyle}>{tr("Default Currency",lang)}</div>
+              <div style={subtitleStyle}>{tr("What currency do you mostly use? You can switch any time.",lang)}</div>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:10}}>
               {[
-                {k:"KZT",label:"Tenge",sym:"₸"},
-                {k:"USD",label:"US Dollar",sym:"$"},
-                {k:"EUR",label:"Euro",sym:"€"},
-                {k:"USDT",label:"Tether (Crypto)",sym:"₮"}
+                {k:"KZT",label:tr("Tenge",lang),sym:"₸"},
+                {k:"USD",label:tr("US Dollar",lang),sym:"$"},
+                {k:"EUR",label:tr("Euro",lang),sym:"€"},
+                {k:"USDT",label:tr("Tether (Crypto)",lang),sym:"₮"}
               ].map(({k,label,sym})=>{
                 const active=currency===k;
                 return(
@@ -4841,18 +4921,18 @@ function OnboardingScreen({tgUser,onComplete}){
       {/* Nav buttons */}
       <div style={{maxWidth:400,margin:"0 auto",width:"100%",marginTop:20}}>
         {step===STEPS.length-1?(
-          <button onClick={finish} style={primaryBtn}>Start Tracking 🚀</button>
+          <button onClick={finish} style={primaryBtn}>{tr("Start Tracking 🚀",lang)}</button>
         ):(
-          <button disabled={!canAdvance()} onClick={()=>setStep(step+1)} style={primaryBtn}>Continue</button>
+          <button disabled={!canAdvance()} onClick={()=>setStep(step+1)} style={primaryBtn}>{tr("Continue",lang)}</button>
         )}
         {step>0&&(
           <button onClick={()=>setStep(step-1)} style={{width:"100%",background:"transparent",color:"#94a3b8",border:"none",borderRadius:12,padding:"10px",fontSize:14,cursor:"pointer",marginTop:8}}>
-            ← Back
+            ← {tr("Back",lang)}
           </button>
         )}
         {(step===1||step===2)&&(
           <button onClick={()=>setStep(step+1)} style={{width:"100%",background:"transparent",color:"#64748b",border:"none",borderRadius:12,padding:"6px",fontSize:13,cursor:"pointer"}}>
-            Skip
+            {tr("Skip",lang)}
           </button>
         )}
       </div>
@@ -5250,6 +5330,7 @@ function App(){
       profilePicture:data.profilePicture,
       aiPet:data.aiPet,
       selectedCurrency:data.selectedCurrency,
+      uiLanguage:data.uiLanguage||settings.uiLanguage,
       onboarded:true
     };
     setSettings(newSettings);
