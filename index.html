@@ -110,6 +110,13 @@ input[type=date]{
   0%{opacity:1;transform:translateY(0);}
   100%{opacity:0;transform:translateY(-4px);}
 }
+/* Settings accordion roll-out — runs when a section's content mounts. Collapse is instant
+   because React unmounts conditional children; an entry-only animation still feels smooth. */
+@keyframes accordionOpen{
+  from{max-height:0;opacity:0;transform:translateY(-6px);}
+  to{max-height:3000px;opacity:1;transform:translateY(0);}
+}
+.accordion-open{animation:accordionOpen .32s ease-out;overflow:hidden;transform-origin:top;}
 </style>
 <!-- Lottie player for animated pet on Home. ~75KB minified, loaded once and cached. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/bodymovin/5.12.2/lottie.min.js"></script>
@@ -1038,6 +1045,7 @@ const TRANSLATIONS={
     "Default Currency":"Основная валюта","What currency do you mostly use? You can switch any time.":"Какой валютой вы пользуетесь чаще? Можно сменить в любой момент.",
     "Tenge":"Тенге","US Dollar":"Доллар США","Euro":"Евро","Tether (Crypto)":"Tether (крипто)",
     "Start Tracking 🚀":"Начать 🚀",
+    "Copy":"Копировать","Copied":"Скопировано",
     "Search notes...":"Поиск по заметкам…","All accounts":"Все счета","Apply":"Применить",
     "No transactions found":"Ничего не найдено",
     "Overview":"Обзор","Due:":"Срок:","of each month":"числа каждого месяца",
@@ -1202,6 +1210,7 @@ const TRANSLATIONS={
     "Default Currency":"Негізгі валюта","What currency do you mostly use? You can switch any time.":"Қандай валютаны жиі қолданасыз? Кез келген уақытта ауыстыруға болады.",
     "Tenge":"Теңге","US Dollar":"АҚШ доллары","Euro":"Еуро","Tether (Crypto)":"Tether (крипто)",
     "Start Tracking 🚀":"Бастау 🚀",
+    "Copy":"Көшіру","Copied":"Көшірілді",
     "Search notes...":"Жазбалардан іздеу…","All accounts":"Барлық шоттар","Apply":"Қолдану",
     "No transactions found":"Транзакциялар табылмады",
     "Overview":"Шолу","Due:":"Мерзімі:","of each month":"ай сайын",
@@ -3881,6 +3890,17 @@ function BudgetSuggestionBanner({categories,transactions,settings,onCategoriesCh
 
 function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,settings,onSettingsChange,onAccountsChange,onCategoriesChange,onFixedChange,onGoalsChange,onTransactionsChange,onReset,onRefreshRates,onExport,t}){
   const[sec,setSec]=useState(null);
+  const[emailCopied,setEmailCopied]=useState(false);
+  const copyEmail=()=>{
+    const email="bex.manapov@gmail.com";
+    haptic();
+    if(navigator.clipboard?.writeText){
+      navigator.clipboard.writeText(email).then(()=>{
+        setEmailCopied(true);
+        setTimeout(()=>setEmailCopied(false),2000);
+      }).catch(()=>{});
+    }
+  };
   const[editAccId,setEditAccId]=useState(null);
   const[editAccName,setEditAccName]=useState("");
   const[editAccCurrency,setEditAccCurrency]=useState("");
@@ -4084,7 +4104,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
 
       <Section k="accounts" label={tr("Accounts",settings.uiLanguage)} icon="🏦"/>
       {sec==="accounts"&&(
-        <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:12}}>
+        <div className="accordion-open" style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:12}}>
           {accounts.map(a=>{
             const isEditing=editAccId===a.id;
             const allowedCurrencies=getAccountCurrencies(a.type);
@@ -4182,7 +4202,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
 
       <Section k="categories" label={tr("Categories",settings.uiLanguage)} icon="🗂️"/>
       {sec==="categories"&&(
-        <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:12}}>
+        <div className="accordion-open" style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:12}}>
           {/* Smart budget suggestion banner — appears when there are expense categories without budgets
               and we have last month's spending data to suggest reasonable amounts. */}
           <BudgetSuggestionBanner categories={categories} transactions={transactions} settings={settings} onCategoriesChange={onCategoriesChange} t={t}/>
@@ -4315,7 +4335,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
 
       <Section k="fixed" label={tr("Fixed Expenses",settings.uiLanguage)} icon="📅"/>
       {sec==="fixed"&&(
-        <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:12}}>
+        <div className="accordion-open" style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:12}}>
           {fixedExpenses.map(fe=>(
             <div key={fe.id} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 0",borderBottom:`1px solid ${t.border}`}}>
               <div style={{flex:1}}>
@@ -4338,7 +4358,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
 
       <Section k="goals" label={tr("Savings Goals",settings.uiLanguage)} icon="🎯"/>
       {sec==="goals"&&(
-        <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:12}}>
+        <div className="accordion-open" style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:12}}>
           {(goals||[]).length===0&&(
             <div style={{fontSize:12,color:t.textMuted,fontStyle:"italic",padding:"8px 4px",lineHeight:1.5}}>
               No goals yet. Add one below — your progress will appear on the Home screen.
@@ -4432,7 +4452,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
 
       <Section k="appLang" label={tr("App Language",settings.uiLanguage)} icon="🌐"/>
       {sec==="appLang"&&(
-        <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:12}}>
+        <div className="accordion-open" style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:12}}>
           <div style={{fontSize:11,color:t.textMuted,marginBottom:8,lineHeight:1.5}}>
             Controls the language of buttons, labels, and menus throughout the app. Independent from your AI companion's language.
           </div>
@@ -4456,7 +4476,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
 
       <Section k="ai" label={tr("AI Coach Settings",settings.uiLanguage)} icon="🤖"/>
       {sec==="ai"&&(
-        <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:12,display:"flex",flexDirection:"column",gap:10}}>
+        <div className="accordion-open" style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:12,display:"flex",flexDirection:"column",gap:10}}>
           <div>
             <div style={{fontSize:12,color:t.textMuted,marginBottom:8}}>Your AI Companion</div>
             <div style={{display:"flex",gap:10}}>
@@ -4493,7 +4513,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
 
       <Section k="currencies" label={tr("Exchange Rates",settings.uiLanguage)} icon="💱"/>
       {sec==="currencies"&&(
-        <div style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:12}}>
+        <div className="accordion-open" style={{background:t.bgCard2,borderRadius:12,padding:"12px",border:`1px solid ${t.border}`,marginBottom:12}}>
           <div style={{fontSize:11,color:t.textMuted,marginBottom:10,lineHeight:1.5}}>
             Rates update automatically once per hour from public APIs (exchangerate-api.com & CoinGecko).
             {settings.lastRateUpdate&&(
@@ -4601,7 +4621,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
       {/* Common questions users ask. Expandable accordion to save space. */}
       <Section k="faq" label={tr("FAQ",settings.uiLanguage)} icon="❓"/>
       {sec==="faq"&&(
-        <div style={{background:t.bgCard2,borderRadius:12,padding:"4px",border:`1px solid ${t.border}`,marginBottom:12}}>
+        <div className="accordion-open" style={{background:t.bgCard2,borderRadius:12,padding:"4px",border:`1px solid ${t.border}`,marginBottom:12}}>
           {FAQ_ITEMS.map((item,i)=>(
             <FAQRow key={i} q={tr(item.q,settings.uiLanguage)} a={tr(item.a,settings.uiLanguage)} t={t} isLast={i===FAQ_ITEMS.length-1}/>
           ))}
@@ -4612,7 +4632,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
       {/* Direct contact info for support / feedback. Tap-to-open for both Telegram and Gmail. */}
       <Section k="contact" label={tr("Contact",settings.uiLanguage)} icon="✉️"/>
       {sec==="contact"&&(
-        <div style={{background:t.bgCard2,borderRadius:12,padding:"14px",border:`1px solid ${t.border}`,marginBottom:12}}>
+        <div className="accordion-open" style={{background:t.bgCard2,borderRadius:12,padding:"14px",border:`1px solid ${t.border}`,marginBottom:12}}>
           <div style={{fontSize:12,color:t.textMuted,marginBottom:14,lineHeight:1.5}}>
             {tr("Have feedback, found a bug, or have a feature suggestion? Reach out — I genuinely read every message.",settings.uiLanguage)}
           </div>
@@ -4633,10 +4653,10 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
             <i className="ti ti-arrow-up-right" style={{fontSize:16,color:t.textMuted}} aria-hidden="true"/>
           </a>
 
-          {/* Email contact */}
-          <a
-            href="mailto:bex.manapov@gmail.com"
-            style={{display:"flex",alignItems:"center",gap:12,padding:"12px",background:t.bgCard,borderRadius:10,border:`1px solid ${t.border}`,textDecoration:"none",color:t.text}}>
+          {/* Email contact — copy button (mailto: doesn't work in Telegram WebView on mobile) */}
+          <div
+            onClick={copyEmail}
+            style={{display:"flex",alignItems:"center",gap:12,padding:"12px",background:t.bgCard,borderRadius:10,border:`1px solid ${t.border}`,color:t.text,cursor:"pointer"}}>
             <div style={{width:40,height:40,borderRadius:"50%",background:"#ea4335",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
               <i className="ti ti-mail" style={{fontSize:20,color:"#fff"}} aria-hidden="true"/>
             </div>
@@ -4644,8 +4664,11 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
               <div style={{fontSize:11,color:t.textMuted,textTransform:"uppercase",letterSpacing:"0.4px",fontWeight:600}}>{tr("Email",settings.uiLanguage)}</div>
               <div style={{fontSize:13,color:t.text,fontWeight:600,marginTop:2,wordBreak:"break-all"}}>bex.manapov@gmail.com</div>
             </div>
-            <i className="ti ti-arrow-up-right" style={{fontSize:16,color:t.textMuted}} aria-hidden="true"/>
-          </a>
+            <div style={{display:"flex",alignItems:"center",gap:4,padding:"6px 10px",background:emailCopied?"#10b98122":t.bgInput,border:`1px solid ${emailCopied?"#10b98166":t.border}`,borderRadius:8,color:emailCopied?"#10b981":t.textMuted,fontSize:11,fontWeight:600,flexShrink:0,transition:"all .2s"}}>
+              <i className={emailCopied?"ti ti-check":"ti ti-copy"} style={{fontSize:14}} aria-hidden="true"/>
+              <span>{emailCopied?tr("Copied",settings.uiLanguage):tr("Copy",settings.uiLanguage)}</span>
+            </div>
+          </div>
         </div>
       )}
 
@@ -5306,20 +5329,42 @@ function App(){
         ...balanceRows
       ].join("\n");
 
+      const filename=`saqta-${new Date().toISOString().split("T")[0]}.csv`;
       const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"});
-      const filename=`finance-tracker-${new Date().toISOString().split("T")[0]}.csv`;
 
-      // Try to share via Telegram first (works inside the Mini App), fall back to browser download
-      const tg=window.Telegram?.WebApp;
-      const url=URL.createObjectURL(blob);
-      const link=document.createElement("a");
-      link.href=url;
-      link.download=filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      // Revoke the blob URL after a short delay to ensure the download starts
-      setTimeout(()=>URL.revokeObjectURL(url),1000);
+      // Mobile-first export strategy:
+      //   1) Web Share API with a File — works in modern mobile browsers + Telegram WebView,
+      //      lets user save to Files / send to other apps.
+      //   2) Clipboard fallback — copies the CSV text, user pastes into Notes/Sheets.
+      //   3) Last resort: classic <a download> for desktop browsers.
+      (async()=>{
+        try{
+          const file=new File([blob],filename,{type:"text/csv"});
+          if(navigator.canShare&&navigator.canShare({files:[file]})){
+            await navigator.share({files:[file],title:"Saqta export",text:filename});
+            return;
+          }
+        }catch(e){
+          // User cancelled share dialog or share failed silently — fall through to clipboard
+          if(e.name==="AbortError")return;
+          console.warn("Web Share failed, falling back:",e);
+        }
+        try{
+          if(navigator.clipboard&&navigator.clipboard.writeText){
+            await navigator.clipboard.writeText(csv);
+            alert("CSV copied to clipboard. Paste into Notes, Sheets, or Excel.");
+            return;
+          }
+        }catch(e){console.warn("Clipboard fallback failed:",e);}
+        // Desktop fallback — <a download> trigger
+        const url=URL.createObjectURL(blob);
+        const link=document.createElement("a");
+        link.href=url;link.download=filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(()=>URL.revokeObjectURL(url),1000);
+      })();
     }catch(e){
       console.error("Export failed:",e);
       alert("Could not export data. Please try again.");
