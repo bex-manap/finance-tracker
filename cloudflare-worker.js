@@ -2394,6 +2394,8 @@ async function handleDataApi(request, env, url) {
 // Delta-sync: return all changes since `body.since` (ms epoch). 0 = full pull.
 // Reads by user_id (the stable account ID); tg_id is no longer used for lookup.
 // _tg_id is kept in the signature for symmetry with other endpoints; underscore = intentional.
+// ALWAYS returns the user's identifiers (email, telegram, etc.) — these are server-side truth
+// and the client renders auth UI from them, not from a settings flag (which can desync).
 async function dataSync(env, user_id, _tg_id, body) {
   const since = parseInt(body.since) || 0;
   const txnRes = await env.DB.prepare(`
@@ -2423,7 +2425,19 @@ async function dataSync(env, user_id, _tg_id, body) {
       updated_at: sRow.updated_at
     };
   }
-  return { ok: true, transactions, deletedIds, state, serverTime: Date.now() };
+  // Identifiers — server-side truth for "is this user linked to an email / apple id".
+  // Returned on every sync (cheap, ~50 bytes) so client always knows the real auth state.
+  const idsRes = await env.DB.prepare(`
+    SELECT type, value, is_recovery, verified_at
+    FROM user_identifiers WHERE user_id = ?
+  `).bind(user_id).all();
+  const identifiers = (idsRes.results || []).map(r => ({
+    type: r.type,
+    value: r.value,
+    is_recovery: !!r.is_recovery,
+    verified_at: r.verified_at
+  }));
+  return { ok: true, transactions, deletedIds, state, identifiers, serverTime: Date.now() };
 }
 
 // Upsert one transaction. Dual-writes user_id + tg_id during the transition period
@@ -2669,6 +2683,112 @@ function isValidEmail(e) {
   return typeof e === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) && e.length <= 254;
 }
 
+// ── JWT + SESSION HELPERS ──
+// Native apps authenticate with an opaque refresh token (server-revocable, stored hashed)
+// plus a short-lived HS256 JWT access token. JWT carries user_id + session_id only — every
+// other claim is looked up fresh, so we can revoke a device by flipping sessions.revoked_at.
+const ACCESS_TTL_MS  = 60 * 60 * 1000;            // 1 hour
+const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;  // 30 days
+
+function b64UrlEncode(bytes) {
+  let bin = '';
+  const arr = new Uint8Array(bytes);
+  for (let i = 0; i < arr.length; i++) bin += String.fromCharCode(arr[i]);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function b64UrlEncodeStr(s) { return b64UrlEncode(new TextEncoder().encode(s)); }
+function b64UrlDecodeStr(s) {
+  const pad = s.length % 4 === 2 ? '==' : s.length % 4 === 3 ? '=' : s.length % 4 === 1 ? '===' : '';
+  const bin = atob(s.replace(/-/g, '+').replace(/_/g, '/') + pad);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+async function hmacSign(secret, msg) {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  return crypto.subtle.sign('HMAC', key, new TextEncoder().encode(msg));
+}
+async function signJwt(payload, secret, ttlMs) {
+  const now = Math.floor(Date.now() / 1000);
+  const headerEnc = b64UrlEncodeStr(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+  const bodyEnc   = b64UrlEncodeStr(JSON.stringify({ ...payload, iat: now, exp: now + Math.floor(ttlMs / 1000) }));
+  const sig = await hmacSign(secret, `${headerEnc}.${bodyEnc}`);
+  return `${headerEnc}.${bodyEnc}.${b64UrlEncode(sig)}`;
+}
+async function verifyJwt(token, secret) {
+  if (typeof token !== 'string') return null;
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  try {
+    const expected = b64UrlEncode(await hmacSign(secret, `${parts[0]}.${parts[1]}`));
+    if (expected !== parts[2]) return null;
+    const payload = JSON.parse(b64UrlDecodeStr(parts[1]));
+    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) return null;
+    return payload;
+  } catch { return null; }
+}
+function generateRefreshToken() {
+  const buf = crypto.getRandomValues(new Uint8Array(32));
+  return Array.from(buf).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+async function sha256Hex(s) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+// Inserts a sessions row and returns the freshly-issued token pair. Caller must have
+// already verified the user's identity (OTP, initData, etc.). Throws if JWT_SECRET missing.
+async function createSession(env, user_id, request) {
+  if (!env.JWT_SECRET) throw new Error('JWT_SECRET not configured');
+  const session_id = crypto.randomUUID();
+  const refresh_token = generateRefreshToken();
+  const refresh_token_hash = await sha256Hex(refresh_token);
+  const now = Date.now();
+  const refresh_expires_at = now + REFRESH_TTL_MS;
+  const device_info = request.headers.get('User-Agent') || null;
+  const ip = request.headers.get('CF-Connecting-IP') || null;
+  await env.DB.prepare(`
+    INSERT INTO sessions (id, user_id, refresh_token_hash, device_info, ip, created_at, last_used_at, expires_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(session_id, user_id, refresh_token_hash, device_info, ip, now, now, refresh_expires_at).run();
+  const jwt = await signJwt({ sub: user_id, sid: session_id }, env.JWT_SECRET, ACCESS_TTL_MS);
+  return {
+    jwt,
+    refresh_token,
+    session_id,
+    access_expires_at: now + ACCESS_TTL_MS,
+    refresh_expires_at
+  };
+}
+// Resolves the calling user from either Authorization: Bearer <jwt> (native apps) or
+// initData in the body (Telegram Mini App). Returns user_id or null.
+async function resolveAuthUser(env, body, request) {
+  const authz = request.headers.get('Authorization') || '';
+  if (authz.startsWith('Bearer ') && env.JWT_SECRET) {
+    const payload = await verifyJwt(authz.slice(7), env.JWT_SECRET);
+    if (payload && payload.sub) {
+      // JWT alone isn't enough — confirm session wasn't revoked
+      if (payload.sid) {
+        const s = await env.DB.prepare(
+          `SELECT revoked_at, expires_at FROM sessions WHERE id = ?`
+        ).bind(payload.sid).first();
+        if (!s || s.revoked_at || s.expires_at < Date.now()) return null;
+      }
+      return payload.sub;
+    }
+  }
+  if (body && body.initData) {
+    const auth = await verifyInitData(body.initData, env.TELEGRAM_BOT_TOKEN);
+    if (auth.ok) return await getOrCreateUserForTelegram(env, auth.user);
+  }
+  return null;
+}
+
 async function handleAuthApi(request, env, url) {
   if (request.method === 'OPTIONS') return new Response(null, { headers: dataCors });
   if (request.method !== 'POST')    return jsonResp({ error: 'Method not allowed' }, 405);
@@ -2681,6 +2801,10 @@ async function handleAuthApi(request, env, url) {
     if (sub === 'email/verify')        return jsonResp(await authEmailVerify(env, body, request, /*linking*/ false));
     if (sub === 'link/email/start')    return jsonResp(await authEmailStart(env, body, request, /*linking*/ true));
     if (sub === 'link/email/verify')   return jsonResp(await authEmailVerify(env, body, request, /*linking*/ true));
+    if (sub === 'unlink')              return jsonResp(await authUnlink(env, body, request));
+    if (sub === 'refresh')             return jsonResp(await authRefresh(env, body, request));
+    if (sub === 'sessions/list')       return jsonResp(await authSessionsList(env, body, request));
+    if (sub === 'sessions/revoke')     return jsonResp(await authSessionsRevoke(env, body, request));
     return jsonResp({ error: 'Not found' }, 404);
   } catch (e) {
     console.error('[auth-api]', e);
@@ -2827,8 +2951,125 @@ async function authEmailVerify(env, body, request, linking) {
   }
   await env.DB.prepare(`UPDATE auth_codes SET consumed_at = ? WHERE id = ?`).bind(now, request_id).run();
   await logAuditEvent(env, { user_id, event_type: existing ? 'sign_in_email' : 'sign_up_email', identifier_type: 'email', identifier_value: email, ip });
-  // Note: real JWT issuance comes when native apps are wired up. For now we return user_id only.
+
+  // Issue a session for native apps. If JWT_SECRET isn't configured, callers still get
+  // user_id back — the Telegram Mini App ignores tokens and just uses initData.
+  if (env.JWT_SECRET) {
+    try {
+      const session = await createSession(env, user_id, request);
+      return { ok: true, user_id, is_new_account: !existing, ...session };
+    } catch (e) {
+      console.error('[auth] session create failed:', e.message);
+    }
+  }
   return { ok: true, user_id, is_new_account: !existing };
+}
+
+// Rotates the supplied refresh token: validates it, replaces its hash (single-use),
+// and returns a new JWT + refresh pair. Old token becomes invalid the moment we write
+// the new hash, so an attacker who replays a leaked token after the legitimate client
+// has rotated will fail validation.
+async function authRefresh(env, body, request) {
+  if (!env.JWT_SECRET) return { ok: false, error: 'JWT not configured' };
+  const refresh_token = (body.refresh_token || '').trim();
+  if (!refresh_token) return { ok: false, error: 'Missing refresh_token' };
+  const ip = request.headers.get('CF-Connecting-IP') || null;
+  const hash = await sha256Hex(refresh_token);
+  const row = await env.DB.prepare(
+    `SELECT id, user_id, expires_at, revoked_at FROM sessions WHERE refresh_token_hash = ?`
+  ).bind(hash).first();
+  if (!row) {
+    await logAuditEvent(env, { event_type: 'refresh_invalid', ip });
+    return { ok: false, error: 'Invalid refresh token' };
+  }
+  if (row.revoked_at) {
+    await logAuditEvent(env, { user_id: row.user_id, event_type: 'refresh_revoked', ip });
+    return { ok: false, error: 'Session revoked' };
+  }
+  if (row.expires_at < Date.now()) {
+    await logAuditEvent(env, { user_id: row.user_id, event_type: 'refresh_expired', ip });
+    return { ok: false, error: 'Session expired' };
+  }
+  const new_refresh = generateRefreshToken();
+  const new_hash = await sha256Hex(new_refresh);
+  const now = Date.now();
+  const new_expires_at = now + REFRESH_TTL_MS;
+  await env.DB.prepare(`
+    UPDATE sessions SET refresh_token_hash = ?, last_used_at = ?, expires_at = ?, ip = ? WHERE id = ?
+  `).bind(new_hash, now, new_expires_at, ip, row.id).run();
+  const jwt = await signJwt({ sub: row.user_id, sid: row.id }, env.JWT_SECRET, ACCESS_TTL_MS);
+  await logAuditEvent(env, { user_id: row.user_id, event_type: 'refresh_success', ip });
+  return {
+    ok: true,
+    jwt,
+    refresh_token: new_refresh,
+    session_id: row.id,
+    user_id: row.user_id,
+    access_expires_at: now + ACCESS_TTL_MS,
+    refresh_expires_at: new_expires_at
+  };
+}
+
+// Lists active (non-revoked, non-expired) sessions for the calling user. Used by a
+// future "Active devices" screen. Returns no token material — just metadata.
+async function authSessionsList(env, body, request) {
+  const user_id = await resolveAuthUser(env, body, request);
+  if (!user_id) return { ok: false, error: 'Auth failed' };
+  const res = await env.DB.prepare(`
+    SELECT id, device_info, ip, created_at, last_used_at, expires_at
+    FROM sessions
+    WHERE user_id = ? AND revoked_at IS NULL AND expires_at > ?
+    ORDER BY last_used_at DESC
+  `).bind(user_id, Date.now()).all();
+  return { ok: true, sessions: res.results || [] };
+}
+
+// Revokes either a single session (sign-out on one device) or all sessions for the user
+// (sign-out everywhere). Authorization comes from JWT or initData via resolveAuthUser.
+async function authSessionsRevoke(env, body, request) {
+  const user_id = await resolveAuthUser(env, body, request);
+  if (!user_id) return { ok: false, error: 'Auth failed' };
+  const ip = request.headers.get('CF-Connecting-IP') || null;
+  const now = Date.now();
+  if (body.all === true) {
+    await env.DB.prepare(
+      `UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL`
+    ).bind(now, user_id).run();
+    await logAuditEvent(env, { user_id, event_type: 'sessions_revoke_all', ip });
+    return { ok: true };
+  }
+  const session_id = (body.session_id || '').trim();
+  if (!session_id) return { ok: false, error: 'Missing session_id' };
+  const row = await env.DB.prepare(`SELECT user_id FROM sessions WHERE id = ?`).bind(session_id).first();
+  if (!row || row.user_id !== user_id) return { ok: false, error: 'Session not found' };
+  await env.DB.prepare(`UPDATE sessions SET revoked_at = ? WHERE id = ?`).bind(now, session_id).run();
+  await logAuditEvent(env, { user_id, event_type: 'session_revoke', ip, metadata: { session_id } });
+  return { ok: true };
+}
+
+// Removes a non-Telegram identifier from the user's account (email, future Apple ID, etc.).
+// We refuse to unlink `telegram` for Telegram Mini App users since that's their only auth method;
+// without it they'd be locked out of the Mini App. They can always re-link via the same flow.
+async function authUnlink(env, body, request) {
+  const auth = await verifyInitData(body.initData, env.TELEGRAM_BOT_TOKEN);
+  if (!auth.ok) return { ok: false, error: 'Auth failed' };
+  const user_id = await getOrCreateUserForTelegram(env, auth.user);
+  const ip = request.headers.get('CF-Connecting-IP') || null;
+  const type = (body.type || '').trim();
+  const value = (body.value || '').trim().toLowerCase();
+  if (!type || !value) return { ok: false, error: 'Missing type or value' };
+  if (type === 'telegram') return { ok: false, error: 'Cannot unlink Telegram identifier' };
+
+  // Ownership check — only delete if this identifier actually belongs to the current user
+  const row = await env.DB.prepare(
+    `SELECT user_id FROM user_identifiers WHERE type = ? AND value = ?`
+  ).bind(type, value).first();
+  if (!row) return { ok: false, error: 'Identifier not found' };
+  if (row.user_id !== user_id) return { ok: false, error: 'Identifier does not belong to this account' };
+
+  await env.DB.prepare(`DELETE FROM user_identifiers WHERE type = ? AND value = ?`).bind(type, value).run();
+  await logAuditEvent(env, { user_id, event_type: 'unlink_identifier', identifier_type: type, identifier_value: value, ip });
+  return { ok: true };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
