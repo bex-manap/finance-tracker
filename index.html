@@ -731,7 +731,8 @@ const API={
     return res.json().catch(()=>({ok:false,error:`HTTP ${res.status}`}));
   },
   linkEmailStart(email){return this._authCall("link/email/start",{email});},
-  linkEmailVerify(request_id,code){return this._authCall("link/email/verify",{request_id,code});}
+  linkEmailVerify(request_id,code){return this._authCall("link/email/verify",{request_id,code});},
+  unlink(type,value){return this._authCall("unlink",{type,value});}
 };
 
 // ── LIVE EXCHANGE RATES ──
@@ -1071,6 +1072,9 @@ const TRANSLATIONS={
     "Email already in use":"Почта уже используется",
     "This email is linked to another Saqta account. Account merging isn't supported yet — please use a different email or reach out to support.":"Эта почта уже привязана к другому аккаунту Saqta. Объединение пока не поддерживается — используйте другую почту или свяжитесь с поддержкой.",
     "Other account":"Другой аккаунт","Your account":"Ваш аккаунт","transactions":"транзакций",
+    "Unlink Email":"Отвязать почту",
+    "Unlink this email? You won't be able to sign in with it on other devices until you link it again.":"Отвязать эту почту? Вы не сможете входить с ней с других устройств, пока не привяжете снова.",
+    "Could not unlink. Please try again.":"Не удалось отвязать. Попробуйте ещё раз.",
     "Search notes...":"Поиск по заметкам…","All accounts":"Все счета","Apply":"Применить",
     "No transactions found":"Ничего не найдено",
     "Overview":"Обзор","Due:":"Срок:","of each month":"числа каждого месяца",
@@ -1248,6 +1252,9 @@ const TRANSLATIONS={
     "Email already in use":"Пошта қолданыста",
     "This email is linked to another Saqta account. Account merging isn't supported yet — please use a different email or reach out to support.":"Бұл пошта басқа Saqta аккаунтымен байланысқан. Аккаунттарды біріктіру әлі қолжетімсіз — басқа пошта қолданыңыз немесе қолдау қызметіне хабарласыңыз.",
     "Other account":"Басқа аккаунт","Your account":"Сіздің аккаунт","transactions":"транзакция",
+    "Unlink Email":"Поштаны ажырату",
+    "Unlink this email? You won't be able to sign in with it on other devices until you link it again.":"Бұл поштаны ажыратасыз ба? Қайта қоспағанша басқа құрылғыдан осы поштамен кіре алмайсыз.",
+    "Could not unlink. Please try again.":"Ажырату мүмкін болмады. Қайталап көріңіз.",
     "Search notes...":"Жазбалардан іздеу…","All accounts":"Барлық шоттар","Apply":"Қолдану",
     "No transactions found":"Транзакциялар табылмады",
     "Overview":"Шолу","Due:":"Мерзімі:","of each month":"ай сайын",
@@ -4260,6 +4267,23 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
                   <div style={{flex:1,minWidth:0,fontSize:13,color:t.text,wordBreak:"break-all"}}>{linkedEmail.value}</div>
                 </div>
                 <div style={{fontSize:11,color:t.textMuted,marginTop:8,lineHeight:1.5}}>{tr("You can sign in on other devices using this email.",settings.uiLanguage)}</div>
+                <button onClick={async()=>{
+                  const msg=tr("Unlink this email? You won't be able to sign in with it on other devices until you link it again.",settings.uiLanguage);
+                  if(!confirm(msg))return;
+                  haptic();
+                  try{
+                    const res=await API.unlink("email",linkedEmail.value);
+                    if(res.ok){
+                      const next=(identifiers||[]).filter(i=>!(i.type==="email"&&i.value===linkedEmail.value));
+                      onIdentifiersChange(next);
+                      LS.set("ft_identifiers",next);
+                    }else{
+                      alert(res.error||tr("Could not unlink. Please try again.",settings.uiLanguage));
+                    }
+                  }catch(e){alert(e.message);}
+                }} style={{width:"100%",background:"transparent",color:"#ef4444",border:`1.5px solid #ef4444`,borderRadius:10,padding:"10px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"system-ui,sans-serif",marginTop:10}}>
+                  {tr("Unlink Email",settings.uiLanguage)}
+                </button>
               </div>
             ):(
               <div>
