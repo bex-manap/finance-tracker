@@ -74,6 +74,9 @@ export default {
     if (url.pathname === '/parse-statement')  return handleParseStatement(request, env);
     // Server-side user data storage (D1). Source of truth for txns + state.
     if (url.pathname.startsWith('/api/data/')) return handleDataApi(request, env, url);
+    // Email OTP + identity linking (Phase 1b). Used by Telegram Mini App to link email,
+    // and by future native apps to sign in via email.
+    if (url.pathname.startsWith('/api/auth/')) return handleAuthApi(request, env, url);
 
     return handleAnthropicProxy(request, env);
   },
@@ -2131,6 +2134,7 @@ async function verifyInitData(initData, botToken) {
 }
 
 async function ensureDataTables(env) {
+  // Legacy tables (kept for back-compat during dual-write transition; tg_id will be removed after stable)
   await env.DB.prepare(`
     CREATE TABLE IF NOT EXISTS user_transactions (
       tg_id INTEGER NOT NULL,
@@ -2156,6 +2160,205 @@ async function ensureDataTables(env) {
       updated_at INTEGER NOT NULL
     )
   `).run();
+
+  // ── PHASE 1 AUTH TABLES (universal account model) ──
+  // user_accounts: stable internal user IDs. All transactions/state link here via user_id.
+  // Identity (telegram, email, etc.) is decoupled into user_identifiers.
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS user_accounts (
+      id TEXT PRIMARY KEY,
+      display_name TEXT,
+      ui_language TEXT,
+      subscription_status TEXT DEFAULT 'free',
+      subscription_provider TEXT,
+      subscription_expires_at INTEGER,
+      created_at INTEGER NOT NULL,
+      last_active_at INTEGER,
+      is_disabled INTEGER DEFAULT 0,
+      deleted_at INTEGER
+    )
+  `).run();
+  // user_identifiers: many-to-one. Each row is one way to reach an account
+  // (telegram_id, primary email, recovery email, apple_user_id, etc.).
+  // is_recovery=1 marks the secondary recovery email — at most one per account.
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS user_identifiers (
+      type TEXT NOT NULL,
+      value TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      is_recovery INTEGER DEFAULT 0,
+      verified_at INTEGER,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (type, value),
+      FOREIGN KEY (user_id) REFERENCES user_accounts(id)
+    )
+  `).run();
+  await env.DB.prepare(`
+    CREATE INDEX IF NOT EXISTS idx_identifiers_user ON user_identifiers(user_id)
+  `).run();
+  // sessions: opaque refresh tokens (server-revocable). JWTs are derived from these.
+  // Stores a hash of the token so DB compromise doesn't leak live tokens.
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      refresh_token_hash TEXT NOT NULL,
+      device_info TEXT,
+      ip TEXT,
+      created_at INTEGER NOT NULL,
+      last_used_at INTEGER,
+      expires_at INTEGER NOT NULL,
+      revoked_at INTEGER,
+      FOREIGN KEY (user_id) REFERENCES user_accounts(id)
+    )
+  `).run();
+  await env.DB.prepare(`
+    CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)
+  `).run();
+  // auth_codes: short-lived OTPs. Hashed (never stored in plaintext).
+  // attempts column counts wrong-code submissions per code (lock after N).
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS auth_codes (
+      id TEXT PRIMARY KEY,
+      identifier_type TEXT NOT NULL,
+      identifier_value TEXT NOT NULL,
+      code_hash TEXT NOT NULL,
+      purpose TEXT NOT NULL,
+      user_id TEXT,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL,
+      attempts INTEGER DEFAULT 0,
+      consumed_at INTEGER
+    )
+  `).run();
+  await env.DB.prepare(`
+    CREATE INDEX IF NOT EXISTS idx_auth_codes_identifier
+    ON auth_codes(identifier_type, identifier_value, created_at DESC)
+  `).run();
+  // auth_audit: security events (login, link, merge, delete, etc.) — for support + GDPR
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS auth_audit (
+      id TEXT PRIMARY KEY,
+      user_id TEXT,
+      event_type TEXT NOT NULL,
+      identifier_type TEXT,
+      identifier_value TEXT,
+      ip TEXT,
+      user_agent TEXT,
+      metadata TEXT,
+      created_at INTEGER NOT NULL
+    )
+  `).run();
+  await env.DB.prepare(`
+    CREATE INDEX IF NOT EXISTS idx_audit_user ON auth_audit(user_id, created_at DESC)
+  `).run();
+  // rate_limits: simple counter per (key, window_start). Cheap & D1-native, no KV needed.
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS rate_limits (
+      key TEXT NOT NULL,
+      window_start INTEGER NOT NULL,
+      count INTEGER NOT NULL DEFAULT 1,
+      PRIMARY KEY (key, window_start)
+    )
+  `).run();
+  // migrations: tracks one-shot data migrations so we run each exactly once
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS migrations (
+      name TEXT PRIMARY KEY,
+      done_at INTEGER NOT NULL
+    )
+  `).run();
+
+  // ── DUAL-WRITE TRANSITION COLUMNS ──
+  // Add user_id to existing tables WITHOUT removing tg_id. Reads & writes target both
+  // during the transition. After the new system is stable, tg_id can be dropped.
+  // SQLite doesn't support "ADD COLUMN IF NOT EXISTS" — wrap in try/catch for idempotency.
+  for (const sql of [
+    `ALTER TABLE user_transactions ADD COLUMN user_id TEXT`,
+    `ALTER TABLE user_state ADD COLUMN user_id TEXT`,
+    `CREATE INDEX IF NOT EXISTS idx_txn_user_updated ON user_transactions(user_id, updated_at)`,
+    `CREATE INDEX IF NOT EXISTS idx_state_user ON user_state(user_id)`
+  ]) {
+    try { await env.DB.prepare(sql).run(); } catch (e) {
+      // "duplicate column" or "already exists" — safe to ignore on repeat runs
+      if (!/duplicate column|already exists/i.test(e.message)) throw e;
+    }
+  }
+}
+
+// Resolves the stable user_id for an incoming Telegram user. Creates the account
+// + telegram identifier if this is a brand-new user (post-backfill scenario).
+// Also updates last_active_at on every call so we have rough liveness signal.
+async function getOrCreateUserForTelegram(env, tgUser) {
+  const tg_id = String(tgUser.id);
+  const now = Date.now();
+  const existing = await env.DB.prepare(
+    `SELECT user_id FROM user_identifiers WHERE type = 'telegram' AND value = ?`
+  ).bind(tg_id).first();
+  if (existing) {
+    // Update activity timestamp (fire and forget — don't block on it)
+    env.DB.prepare(`UPDATE user_accounts SET last_active_at = ? WHERE id = ?`)
+      .bind(now, existing.user_id).run().catch(() => {});
+    return existing.user_id;
+  }
+  // New user — create account + identifier transactionally
+  const userId = crypto.randomUUID();
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO user_accounts (id, display_name, ui_language, created_at, last_active_at) VALUES (?, ?, ?, ?, ?)`
+    ).bind(userId, tgUser.first_name || null, tgUser.language_code || null, now, now),
+    env.DB.prepare(
+      `INSERT INTO user_identifiers (type, value, user_id, verified_at, created_at) VALUES ('telegram', ?, ?, ?, ?)`
+    ).bind(tg_id, userId, now, now)
+  ]);
+  return userId;
+}
+
+// One-shot backfill: for every existing tg_id in user_transactions / user_state,
+// create a user_account + telegram identifier and update rows with the new user_id.
+// Idempotent via the `migrations` table — runs at most once.
+async function ensureAccountBackfill(env) {
+  const flag = await env.DB.prepare(`SELECT name FROM migrations WHERE name = 'v2_account_backfill'`).first();
+  if (flag) return; // already done
+  const now = Date.now();
+  // Collect every distinct tg_id we know about across both tables
+  const txnIds = await env.DB.prepare(`SELECT DISTINCT tg_id FROM user_transactions WHERE tg_id IS NOT NULL`).all();
+  const stateIds = await env.DB.prepare(`SELECT DISTINCT tg_id FROM user_state WHERE tg_id IS NOT NULL`).all();
+  const allTgIds = new Set();
+  for (const r of (txnIds.results || [])) allTgIds.add(String(r.tg_id));
+  for (const r of (stateIds.results || [])) allTgIds.add(String(r.tg_id));
+  if (allTgIds.size === 0) {
+    // No existing data — mark migration done and skip
+    await env.DB.prepare(`INSERT INTO migrations (name, done_at) VALUES ('v2_account_backfill', ?)`).bind(now).run();
+    return;
+  }
+  // For each tg_id: create user_account, identifier, and update rows.
+  // D1 supports batched statements which run as a single transaction.
+  const stmts = [];
+  for (const tg_id of allTgIds) {
+    // Check if an identifier already exists for this tg_id (idempotency safety)
+    const existing = await env.DB.prepare(
+      `SELECT user_id FROM user_identifiers WHERE type = 'telegram' AND value = ?`
+    ).bind(tg_id).first();
+    if (existing) continue;
+    const userId = crypto.randomUUID();
+    stmts.push(env.DB.prepare(
+      `INSERT INTO user_accounts (id, created_at, last_active_at) VALUES (?, ?, ?)`
+    ).bind(userId, now, now));
+    stmts.push(env.DB.prepare(
+      `INSERT INTO user_identifiers (type, value, user_id, verified_at, created_at) VALUES ('telegram', ?, ?, ?, ?)`
+    ).bind(tg_id, userId, now, now));
+    stmts.push(env.DB.prepare(
+      `UPDATE user_transactions SET user_id = ? WHERE tg_id = ?`
+    ).bind(userId, Number(tg_id)));
+    stmts.push(env.DB.prepare(
+      `UPDATE user_state SET user_id = ? WHERE tg_id = ?`
+    ).bind(userId, Number(tg_id)));
+  }
+  stmts.push(env.DB.prepare(`INSERT INTO migrations (name, done_at) VALUES ('v2_account_backfill', ?)`).bind(now));
+  // Run as a batch — D1 wraps batch() in a transaction
+  if (stmts.length > 0) await env.DB.batch(stmts);
+  console.log(`[MIGRATION] v2_account_backfill: created ${allTgIds.size} accounts.`);
 }
 
 async function handleDataApi(request, env, url) {
@@ -2169,13 +2372,18 @@ async function handleDataApi(request, env, url) {
   const tg_id = auth.user.id;
   try {
     await ensureDataTables(env);
+    // One-shot backfill: turns every legacy tg_id into a user_account + telegram identifier.
+    // Idempotent (guarded by the migrations table), so safe to call on every request.
+    await ensureAccountBackfill(env);
+    // Resolve the stable user_id (creates a new account if this is a brand-new tg_id)
+    const user_id = await getOrCreateUserForTelegram(env, auth.user);
     const sub = url.pathname.slice('/api/data/'.length);
-    if (sub === 'sync')       return jsonResp(await dataSync(env, tg_id, body));
-    if (sub === 'txn')        return jsonResp(await dataSaveTxn(env, tg_id, body));
-    if (sub === 'txn-delete') return jsonResp(await dataDeleteTxn(env, tg_id, body));
-    if (sub === 'state')      return jsonResp(await dataSaveState(env, tg_id, body));
-    if (sub === 'migrate')    return jsonResp(await dataMigrate(env, tg_id, body));
-    if (sub === 'reset')      return jsonResp(await dataReset(env, tg_id));
+    if (sub === 'sync')       return jsonResp(await dataSync(env, user_id, tg_id, body));
+    if (sub === 'txn')        return jsonResp(await dataSaveTxn(env, user_id, tg_id, body));
+    if (sub === 'txn-delete') return jsonResp(await dataDeleteTxn(env, user_id, tg_id, body));
+    if (sub === 'state')      return jsonResp(await dataSaveState(env, user_id, tg_id, body));
+    if (sub === 'migrate')    return jsonResp(await dataMigrate(env, user_id, tg_id, body));
+    if (sub === 'reset')      return jsonResp(await dataReset(env, user_id, tg_id));
     return jsonResp({ error: 'Not found' }, 404);
   } catch (e) {
     console.error('[data-api]', e);
@@ -2184,13 +2392,15 @@ async function handleDataApi(request, env, url) {
 }
 
 // Delta-sync: return all changes since `body.since` (ms epoch). 0 = full pull.
-async function dataSync(env, tg_id, body) {
+// Reads by user_id (the stable account ID); tg_id is no longer used for lookup.
+// _tg_id is kept in the signature for symmetry with other endpoints; underscore = intentional.
+async function dataSync(env, user_id, _tg_id, body) {
   const since = parseInt(body.since) || 0;
   const txnRes = await env.DB.prepare(`
     SELECT txn_id, data, updated_at, deleted
     FROM user_transactions
-    WHERE tg_id = ? AND updated_at > ?
-  `).bind(tg_id, since).all();
+    WHERE user_id = ? AND updated_at > ?
+  `).bind(user_id, since).all();
   const transactions = [];
   const deletedIds = [];
   for (const r of (txnRes.results || [])) {
@@ -2199,8 +2409,8 @@ async function dataSync(env, tg_id, body) {
   }
   const sRow = await env.DB.prepare(`
     SELECT accounts, categories, fixed_expenses, goals, settings, updated_at
-    FROM user_state WHERE tg_id = ?
-  `).bind(tg_id).first();
+    FROM user_state WHERE user_id = ?
+  `).bind(user_id).first();
   let state = null;
   if (sRow && sRow.updated_at > since) {
     const parse = (v) => { if (!v) return null; try { return JSON.parse(v); } catch { return null; } };
@@ -2216,36 +2426,40 @@ async function dataSync(env, tg_id, body) {
   return { ok: true, transactions, deletedIds, state, serverTime: Date.now() };
 }
 
-async function dataSaveTxn(env, tg_id, body) {
+// Upsert one transaction. Dual-writes user_id + tg_id during the transition period
+// so legacy tg_id-keyed reads still work if anything reads them before the cutover.
+async function dataSaveTxn(env, user_id, tg_id, body) {
   const txn = body.txn;
   if (!txn || !txn.id) return { ok: false, error: 'Missing txn' };
   const now = Date.now();
   await env.DB.prepare(`
-    INSERT INTO user_transactions (tg_id, txn_id, data, updated_at, deleted)
-    VALUES (?, ?, ?, ?, 0)
+    INSERT INTO user_transactions (tg_id, user_id, txn_id, data, updated_at, deleted)
+    VALUES (?, ?, ?, ?, ?, 0)
     ON CONFLICT(tg_id, txn_id) DO UPDATE SET
-      data = excluded.data, updated_at = excluded.updated_at, deleted = 0
-  `).bind(tg_id, txn.id, JSON.stringify(txn), now).run();
+      user_id = excluded.user_id, data = excluded.data, updated_at = excluded.updated_at, deleted = 0
+  `).bind(tg_id, user_id, txn.id, JSON.stringify(txn), now).run();
   return { ok: true, updated_at: now };
 }
 
-async function dataDeleteTxn(env, tg_id, body) {
+async function dataDeleteTxn(env, user_id, _tg_id, body) {
   if (!body.txn_id) return { ok: false, error: 'Missing txn_id' };
   const now = Date.now();
   await env.DB.prepare(`
-    UPDATE user_transactions SET deleted = 1, updated_at = ?
-    WHERE tg_id = ? AND txn_id = ?
-  `).bind(now, tg_id, body.txn_id).run();
+    UPDATE user_transactions SET deleted = 1, updated_at = ?, user_id = ?
+    WHERE user_id = ? AND txn_id = ?
+  `).bind(now, user_id, user_id, body.txn_id).run();
   return { ok: true, updated_at: now };
 }
 
-async function dataSaveState(env, tg_id, body) {
+async function dataSaveState(env, user_id, tg_id, body) {
   const now = Date.now();
-  // Only fields explicitly provided are written — others stay as-is via COALESCE
+  // Dual-write: insert keyed by tg_id (legacy PK) but always set user_id too.
+  // COALESCE pattern preserves fields not in this update.
   await env.DB.prepare(`
-    INSERT INTO user_state (tg_id, accounts, categories, fixed_expenses, goals, settings, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO user_state (tg_id, user_id, accounts, categories, fixed_expenses, goals, settings, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(tg_id) DO UPDATE SET
+      user_id = excluded.user_id,
       accounts = COALESCE(excluded.accounts, user_state.accounts),
       categories = COALESCE(excluded.categories, user_state.categories),
       fixed_expenses = COALESCE(excluded.fixed_expenses, user_state.fixed_expenses),
@@ -2253,7 +2467,7 @@ async function dataSaveState(env, tg_id, body) {
       settings = COALESCE(excluded.settings, user_state.settings),
       updated_at = excluded.updated_at
   `).bind(
-    tg_id,
+    tg_id, user_id,
     body.accounts != null ? JSON.stringify(body.accounts) : null,
     body.categories != null ? JSON.stringify(body.categories) : null,
     body.fixed_expenses != null ? JSON.stringify(body.fixed_expenses) : null,
@@ -2266,33 +2480,355 @@ async function dataSaveState(env, tg_id, body) {
 
 // Bulk migrate — used once per user when upgrading from CloudStorage to server.
 // Idempotent: existing rows are not overwritten (uses ON CONFLICT DO NOTHING).
-async function dataMigrate(env, tg_id, body) {
+async function dataMigrate(env, user_id, tg_id, body) {
   const now = Date.now();
   const txns = Array.isArray(body.transactions) ? body.transactions : [];
   // D1 supports batch inserts via .batch()
   if (txns.length > 0) {
     const stmt = env.DB.prepare(`
-      INSERT INTO user_transactions (tg_id, txn_id, data, updated_at, deleted)
-      VALUES (?, ?, ?, ?, 0)
+      INSERT INTO user_transactions (tg_id, user_id, txn_id, data, updated_at, deleted)
+      VALUES (?, ?, ?, ?, ?, 0)
       ON CONFLICT(tg_id, txn_id) DO NOTHING
     `);
-    const batched = txns.filter(t => t && t.id).map(t => stmt.bind(tg_id, t.id, JSON.stringify(t), now));
+    const batched = txns.filter(t => t && t.id).map(t => stmt.bind(tg_id, user_id, t.id, JSON.stringify(t), now));
     // D1 has a per-batch size limit; chunk to be safe
     for (let i = 0; i < batched.length; i += 50) {
       await env.DB.batch(batched.slice(i, i + 50));
     }
   }
   if (body.state) {
-    await dataSaveState(env, tg_id, body.state);
+    await dataSaveState(env, user_id, tg_id, body.state);
   }
   return { ok: true, count: txns.length };
 }
 
 // Wipe all server-side data for this user. Used by the "Reset All Data" button.
-async function dataReset(env, tg_id) {
-  await env.DB.prepare(`DELETE FROM user_transactions WHERE tg_id = ?`).bind(tg_id).run();
-  await env.DB.prepare(`DELETE FROM user_state WHERE tg_id = ?`).bind(tg_id).run();
+// Deletes by user_id so it works even if some rows lack tg_id (future non-Telegram users).
+async function dataReset(env, user_id, tg_id) {
+  await env.DB.prepare(`DELETE FROM user_transactions WHERE user_id = ? OR tg_id = ?`).bind(user_id, tg_id).run();
+  await env.DB.prepare(`DELETE FROM user_state WHERE user_id = ? OR tg_id = ?`).bind(user_id, tg_id).run();
   return { ok: true };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// /api/auth/* — email OTP, account linking, audit logging (Phase 1b).
+// Endpoints:
+//   POST /api/auth/email/start         — send OTP for sign-in (future native apps)
+//   POST /api/auth/email/verify        — verify OTP, sign in or create account
+//   POST /api/auth/link/email/start    — send OTP to link email to current Telegram user
+//   POST /api/auth/link/email/verify   — verify OTP, link email (returns merge preview if email exists elsewhere)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Increments a counter for (key, window). Returns true if within limit, false if exceeded.
+// Uses D1 INSERT...ON CONFLICT to be atomic. Old windows are cleaned up lazily by their absence
+// in queries — we never read stale rows, and disk usage is negligible.
+async function checkRateLimit(env, key, maxPerWindow, windowMs) {
+  const now = Date.now();
+  const windowStart = Math.floor(now / windowMs) * windowMs;
+  await env.DB.prepare(`
+    INSERT INTO rate_limits (key, window_start, count) VALUES (?, ?, 1)
+    ON CONFLICT(key, window_start) DO UPDATE SET count = count + 1
+  `).bind(key, windowStart).run();
+  const row = await env.DB.prepare(`
+    SELECT count FROM rate_limits WHERE key = ? AND window_start = ?
+  `).bind(key, windowStart).first();
+  return row && row.count <= maxPerWindow;
+}
+
+// Generates a cryptographically random 6-digit numeric code (000000–999999).
+function generateOtpCode() {
+  const buf = crypto.getRandomValues(new Uint8Array(4));
+  const num = ((buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3]) >>> 0;
+  return String(num % 1000000).padStart(6, '0');
+}
+
+// SHA-256 hex hash. We store hashed OTPs so DB compromise doesn't leak live codes.
+async function hashOtpCode(code) {
+  const enc = new TextEncoder().encode(code);
+  const buf = await crypto.subtle.digest('SHA-256', enc);
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Localized email subject + HTML body. Same code shown in any language.
+function buildEmailOtp(code, lang) {
+  const t = {
+    English: {
+      subject: 'Saqta — your verification code',
+      title: 'Your verification code',
+      sub: 'Enter this code in the app to continue',
+      footer: 'Expires in 10 minutes. If you didn\'t request this, ignore this email.'
+    },
+    Russian: {
+      subject: 'Saqta — код подтверждения',
+      title: 'Ваш код подтверждения',
+      sub: 'Введите этот код в приложении, чтобы продолжить',
+      footer: 'Срок действия — 10 минут. Если вы не запрашивали этот код, проигнорируйте письмо.'
+    },
+    Kazakh: {
+      subject: 'Saqta — растау коды',
+      title: 'Растау кодыңыз',
+      sub: 'Жалғастыру үшін осы кодты қолданбада енгізіңіз',
+      footer: 'Қолданылу мерзімі — 10 минут. Егер сіз сұрамаған болсаңыз, осы хатты елемеңіз.'
+    }
+  }[lang] || null;
+  const tt = t || {
+    subject: 'Saqta — your verification code',
+    title: 'Your verification code',
+    sub: 'Enter this code in the app to continue',
+    footer: 'Expires in 10 minutes. If you didn\'t request this, ignore this email.'
+  };
+  const html = `<!doctype html>
+<html><body style="font-family:-apple-system,system-ui,sans-serif;background:#f5f5f5;margin:0;padding:40px 20px;">
+  <div style="max-width:480px;margin:0 auto;background:#fff;border-radius:12px;padding:32px;text-align:center;">
+    <div style="font-size:32px;margin-bottom:12px;">💰</div>
+    <h1 style="font-size:22px;margin:0 0 6px;color:#10b981;">Saqta</h1>
+    <p style="color:#64748b;margin:0 0 24px;font-size:14px;">${tt.sub}</p>
+    <div style="font-size:36px;font-weight:700;letter-spacing:8px;color:#1e293b;padding:18px;background:#f1f5f9;border-radius:10px;font-family:ui-monospace,monospace;">${code}</div>
+    <p style="color:#94a3b8;font-size:12px;margin:24px 0 0;line-height:1.6;">${tt.footer}</p>
+  </div>
+</body></html>`;
+  return { subject: tt.subject, html };
+}
+
+// Sends an OTP email via Resend. Throws on failure (caller decides whether to expose to user).
+async function sendOtpEmail(env, email, code, lang) {
+  if (!env.RESEND_API_KEY) throw new Error('RESEND_API_KEY not configured');
+  const { subject, html } = buildEmailOtp(code, lang);
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      from: env.EMAIL_FROM_ADDRESS || 'Saqta <onboarding@resend.dev>',
+      to: [email],
+      subject,
+      html
+    })
+  });
+  if (!res.ok) {
+    const err = await res.text().catch(() => '');
+    throw new Error(`Resend ${res.status}: ${err}`);
+  }
+  return res.json();
+}
+
+// Audit log — fire-and-forget recording of security-relevant events.
+async function logAuditEvent(env, ev) {
+  try {
+    await env.DB.prepare(`
+      INSERT INTO auth_audit (id, user_id, event_type, identifier_type, identifier_value, ip, user_agent, metadata, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      crypto.randomUUID(),
+      ev.user_id || null,
+      ev.event_type,
+      ev.identifier_type || null,
+      ev.identifier_value || null,
+      ev.ip || null,
+      ev.user_agent || null,
+      ev.metadata ? JSON.stringify(ev.metadata) : null,
+      Date.now()
+    ).run();
+  } catch (e) { console.warn('[AUDIT] write failed:', e.message); }
+}
+
+// Looks up a user's preferred UI language from their stored settings (if any).
+// Defaults to English. Used to send the OTP email in their language.
+async function getUserLanguage(env, user_id) {
+  if (!user_id) return 'English';
+  try {
+    const row = await env.DB.prepare(`SELECT settings FROM user_state WHERE user_id = ?`).bind(user_id).first();
+    if (row && row.settings) {
+      const s = JSON.parse(row.settings);
+      if (s.uiLanguage) return s.uiLanguage;
+    }
+  } catch {}
+  return 'English';
+}
+
+// Returns a minimal preview of an account for the merge dialog — name, txn count, age.
+async function getMergePreview(env, user_id) {
+  const account = await env.DB.prepare(
+    `SELECT display_name, created_at FROM user_accounts WHERE id = ?`
+  ).bind(user_id).first();
+  const txnCount = await env.DB.prepare(
+    `SELECT COUNT(*) as c FROM user_transactions WHERE user_id = ? AND deleted = 0`
+  ).bind(user_id).first();
+  return {
+    user_id,
+    display_name: account?.display_name || null,
+    created_at: account?.created_at || null,
+    transaction_count: txnCount?.c || 0
+  };
+}
+
+// Basic email syntax check. Not RFC-perfect but rejects obvious garbage.
+function isValidEmail(e) {
+  return typeof e === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) && e.length <= 254;
+}
+
+async function handleAuthApi(request, env, url) {
+  if (request.method === 'OPTIONS') return new Response(null, { headers: dataCors });
+  if (request.method !== 'POST')    return jsonResp({ error: 'Method not allowed' }, 405);
+  let body;
+  try { body = await request.json(); } catch { return jsonResp({ error: 'Invalid JSON' }, 400); }
+  try {
+    await ensureDataTables(env);
+    const sub = url.pathname.slice('/api/auth/'.length);
+    if (sub === 'email/start')         return jsonResp(await authEmailStart(env, body, request, /*linking*/ false));
+    if (sub === 'email/verify')        return jsonResp(await authEmailVerify(env, body, request, /*linking*/ false));
+    if (sub === 'link/email/start')    return jsonResp(await authEmailStart(env, body, request, /*linking*/ true));
+    if (sub === 'link/email/verify')   return jsonResp(await authEmailVerify(env, body, request, /*linking*/ true));
+    return jsonResp({ error: 'Not found' }, 404);
+  } catch (e) {
+    console.error('[auth-api]', e);
+    return jsonResp({ error: 'Internal error', detail: e.message }, 500);
+  }
+}
+
+// Sends an email OTP. If `linking` is true, requires initData and ties the code to the
+// authenticated Telegram user — used to link an email to an existing account.
+async function authEmailStart(env, body, request, linking) {
+  const email = (body.email || '').trim().toLowerCase();
+  if (!isValidEmail(email)) return { ok: false, error: 'Invalid email' };
+  const ip = request.headers.get('CF-Connecting-IP') || null;
+
+  // If linking, resolve current Telegram user — they must be authenticated to link to their account
+  let user_id = null;
+  if (linking) {
+    const auth = await verifyInitData(body.initData, env.TELEGRAM_BOT_TOKEN);
+    if (!auth.ok) return { ok: false, error: 'Auth failed' };
+    user_id = await getOrCreateUserForTelegram(env, auth.user);
+  }
+
+  // Rate limits — per email (5/15min), per IP (20/hour). Stops abuse + email-bombing.
+  if (!await checkRateLimit(env, `otp:email:${email}`, 5, 15 * 60 * 1000)) {
+    await logAuditEvent(env, { user_id, event_type: 'otp_rate_limit_email', identifier_type: 'email', identifier_value: email, ip });
+    return { ok: false, error: 'Too many attempts for this email. Try again in 15 minutes.' };
+  }
+  if (ip && !await checkRateLimit(env, `otp:ip:${ip}`, 20, 60 * 60 * 1000)) {
+    await logAuditEvent(env, { user_id, event_type: 'otp_rate_limit_ip', ip });
+    return { ok: false, error: 'Too many attempts. Try again later.' };
+  }
+
+  // Generate, hash, store
+  const code = generateOtpCode();
+  const code_hash = await hashOtpCode(code);
+  const request_id = crypto.randomUUID();
+  const now = Date.now();
+  const expires_at = now + 10 * 60 * 1000; // 10 minutes
+  const purpose = linking ? 'link' : 'login';
+  await env.DB.prepare(`
+    INSERT INTO auth_codes (id, identifier_type, identifier_value, code_hash, purpose, user_id, created_at, expires_at)
+    VALUES (?, 'email', ?, ?, ?, ?, ?, ?)
+  `).bind(request_id, email, code_hash, purpose, user_id, now, expires_at).run();
+
+  // Send email in the user's language (if known)
+  const lang = await getUserLanguage(env, user_id);
+  try {
+    await sendOtpEmail(env, email, code, lang);
+  } catch (e) {
+    console.error('[OTP] send failed:', e.message);
+    await logAuditEvent(env, { user_id, event_type: 'otp_send_failed', identifier_type: 'email', identifier_value: email, ip, metadata: { error: e.message } });
+    return { ok: false, error: 'Could not send email. Please try again.' };
+  }
+
+  await logAuditEvent(env, { user_id, event_type: `${purpose}_email_start`, identifier_type: 'email', identifier_value: email, ip });
+  return { ok: true, request_id };
+}
+
+// Verifies an OTP. Logic differs by `linking`:
+//  - linking=false (sign-in): finds or creates account by email, returns user_id
+//  - linking=true (link to Telegram): verifies code belongs to current user, adds email identifier.
+//    If email already linked to ANOTHER account, returns conflict preview (no merge performed).
+async function authEmailVerify(env, body, request, linking) {
+  const { request_id, code } = body;
+  if (!request_id || !code) return { ok: false, error: 'Missing request_id or code' };
+  const ip = request.headers.get('CF-Connecting-IP') || null;
+
+  // Lookup OTP record
+  const row = await env.DB.prepare(`SELECT * FROM auth_codes WHERE id = ?`).bind(request_id).first();
+  if (!row) return { ok: false, error: 'Invalid request' };
+  if (row.purpose !== (linking ? 'link' : 'login')) return { ok: false, error: 'Invalid request type' };
+  if (row.consumed_at) return { ok: false, error: 'Code already used' };
+  if (row.expires_at < Date.now()) return { ok: false, error: 'Code expired. Request a new one.' };
+  if (row.attempts >= 5) return { ok: false, error: 'Too many failed attempts. Request a new code.' };
+
+  // For linking, the requester must be the same Telegram user who initiated the request
+  let current_user_id = row.user_id;
+  if (linking) {
+    const auth = await verifyInitData(body.initData, env.TELEGRAM_BOT_TOKEN);
+    if (!auth.ok) return { ok: false, error: 'Auth failed' };
+    const reqUserId = await getOrCreateUserForTelegram(env, auth.user);
+    if (reqUserId !== row.user_id) return { ok: false, error: 'Mismatched user' };
+    current_user_id = reqUserId;
+  }
+
+  // Compare code (constant-time-ish via fixed-length hex compare)
+  const code_hash = await hashOtpCode(String(code).trim());
+  if (code_hash !== row.code_hash) {
+    await env.DB.prepare(`UPDATE auth_codes SET attempts = attempts + 1 WHERE id = ?`).bind(request_id).run();
+    await logAuditEvent(env, { user_id: current_user_id, event_type: 'otp_invalid_code', identifier_type: 'email', identifier_value: row.identifier_value, ip });
+    return { ok: false, error: 'Invalid code' };
+  }
+
+  const email = row.identifier_value;
+  const now = Date.now();
+
+  if (linking) {
+    // Is this email already linked to another account?
+    const existing = await env.DB.prepare(
+      `SELECT user_id FROM user_identifiers WHERE type = 'email' AND value = ?`
+    ).bind(email).first();
+    if (existing && existing.user_id !== current_user_id) {
+      // Conflict — return preview, do not link yet. Client shows merge dialog.
+      const [me, them] = await Promise.all([
+        getMergePreview(env, current_user_id),
+        getMergePreview(env, existing.user_id)
+      ]);
+      // Consume the code so it can't be reused even on conflict
+      await env.DB.prepare(`UPDATE auth_codes SET consumed_at = ? WHERE id = ?`).bind(now, request_id).run();
+      await logAuditEvent(env, { user_id: current_user_id, event_type: 'link_email_conflict', identifier_type: 'email', identifier_value: email, ip, metadata: { other_user_id: existing.user_id } });
+      return { ok: false, conflict: true, current_account: me, other_account: them };
+    }
+    // No conflict — link
+    await env.DB.batch([
+      env.DB.prepare(`
+        INSERT INTO user_identifiers (type, value, user_id, verified_at, created_at) VALUES ('email', ?, ?, ?, ?)
+        ON CONFLICT(type, value) DO UPDATE SET verified_at = excluded.verified_at
+      `).bind(email, current_user_id, now, now),
+      env.DB.prepare(`UPDATE auth_codes SET consumed_at = ? WHERE id = ?`).bind(now, request_id)
+    ]);
+    await logAuditEvent(env, { user_id: current_user_id, event_type: 'link_email_success', identifier_type: 'email', identifier_value: email, ip });
+    return { ok: true, email };
+  }
+
+  // Sign-in flow (not linking) — find or create account, return user_id.
+  // Used by future native apps. Telegram Mini App doesn't hit this path.
+  const existing = await env.DB.prepare(
+    `SELECT user_id FROM user_identifiers WHERE type = 'email' AND value = ?`
+  ).bind(email).first();
+  let user_id;
+  if (existing) {
+    user_id = existing.user_id;
+  } else {
+    // Brand-new user signing in via email
+    user_id = crypto.randomUUID();
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO user_accounts (id, created_at, last_active_at) VALUES (?, ?, ?)`
+      ).bind(user_id, now, now),
+      env.DB.prepare(
+        `INSERT INTO user_identifiers (type, value, user_id, verified_at, created_at) VALUES ('email', ?, ?, ?, ?)`
+      ).bind(email, user_id, now, now)
+    ]);
+  }
+  await env.DB.prepare(`UPDATE auth_codes SET consumed_at = ? WHERE id = ?`).bind(now, request_id).run();
+  await logAuditEvent(env, { user_id, event_type: existing ? 'sign_in_email' : 'sign_up_email', identifier_type: 'email', identifier_value: email, ip });
+  // Note: real JWT issuance comes when native apps are wired up. For now we return user_id only.
+  return { ok: true, user_id, is_new_account: !existing };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

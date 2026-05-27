@@ -718,7 +718,20 @@ const API={
   deleteTransaction(txn_id){return this._qcall("txn-delete",{txn_id});},
   saveState(state){return this._qcall("state",state);},
   migrate(data){return this._call("migrate",data);},
-  reset(){return this._call("reset",{});}
+  reset(){return this._call("reset",{});},
+  // Auth endpoints (Phase 1b). These call /api/auth/* instead of /api/data/*.
+  async _authCall(path,body){
+    if(!this.initData)throw new Error("no-initdata");
+    const res=await fetch(`${API_BASE}/api/auth/${path}`,{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({initData:this.initData,...body})
+    });
+    // Return both ok and non-ok bodies — caller inspects body.ok/error/conflict
+    return res.json().catch(()=>({ok:false,error:`HTTP ${res.status}`}));
+  },
+  linkEmailStart(email){return this._authCall("link/email/start",{email});},
+  linkEmailVerify(request_id,code){return this._authCall("link/email/verify",{request_id,code});}
 };
 
 // ── LIVE EXCHANGE RATES ──
@@ -1046,6 +1059,18 @@ const TRANSLATIONS={
     "Tenge":"Тенге","US Dollar":"Доллар США","Euro":"Евро","Tether (Crypto)":"Tether (крипто)",
     "Start Tracking 🚀":"Начать 🚀",
     "Copy":"Копировать","Copied":"Скопировано",
+    "Sign In":"Вход","Link Email":"Привязать почту","Linked Email":"Привязанная почта",
+    "Link an email to sign in from our iOS/Android apps and never lose your data.":"Привяжите почту, чтобы входить с приложений iOS/Android и не потерять данные.",
+    "You can sign in on other devices using this email.":"Этой почтой можно входить с других устройств.",
+    "Add an email to sign in from other devices and never lose your data.":"Добавьте почту, чтобы входить с других устройств и не потерять данные.",
+    "We sent a 6-digit code to":"Мы отправили 6-значный код на",
+    "Send code":"Отправить код","Sending...":"Отправляем…","Verify":"Подтвердить","Verifying...":"Проверяем…",
+    "Use a different email":"Использовать другую почту",
+    "Invalid email":"Неверный e-mail","Enter the 6-digit code":"Введите 6-значный код",
+    "Email linked":"Почта привязана",
+    "Email already in use":"Почта уже используется",
+    "This email is linked to another Saqta account. Account merging isn't supported yet — please use a different email or reach out to support.":"Эта почта уже привязана к другому аккаунту Saqta. Объединение пока не поддерживается — используйте другую почту или свяжитесь с поддержкой.",
+    "Other account":"Другой аккаунт","Your account":"Ваш аккаунт","transactions":"транзакций",
     "Search notes...":"Поиск по заметкам…","All accounts":"Все счета","Apply":"Применить",
     "No transactions found":"Ничего не найдено",
     "Overview":"Обзор","Due:":"Срок:","of each month":"числа каждого месяца",
@@ -1211,6 +1236,18 @@ const TRANSLATIONS={
     "Tenge":"Теңге","US Dollar":"АҚШ доллары","Euro":"Еуро","Tether (Crypto)":"Tether (крипто)",
     "Start Tracking 🚀":"Бастау 🚀",
     "Copy":"Көшіру","Copied":"Көшірілді",
+    "Sign In":"Кіру","Link Email":"Поштаны қосу","Linked Email":"Қосылған пошта",
+    "Link an email to sign in from our iOS/Android apps and never lose your data.":"iOS/Android қолданбаларынан кіру және деректерді жоғалтпау үшін поштаны қосыңыз.",
+    "You can sign in on other devices using this email.":"Осы поштамен басқа құрылғылардан кіруге болады.",
+    "Add an email to sign in from other devices and never lose your data.":"Басқа құрылғылардан кіріп, деректерді жоғалтпау үшін пошта қосыңыз.",
+    "We sent a 6-digit code to":"6-таңбалы кодты жібердік:",
+    "Send code":"Код жіберу","Sending...":"Жіберілуде…","Verify":"Растау","Verifying...":"Расталуда…",
+    "Use a different email":"Басқа пошта қолдану",
+    "Invalid email":"Қате e-mail","Enter the 6-digit code":"6-таңбалы кодты енгізіңіз",
+    "Email linked":"Пошта қосылды",
+    "Email already in use":"Пошта қолданыста",
+    "This email is linked to another Saqta account. Account merging isn't supported yet — please use a different email or reach out to support.":"Бұл пошта басқа Saqta аккаунтымен байланысқан. Аккаунттарды біріктіру әлі қолжетімсіз — басқа пошта қолданыңыз немесе қолдау қызметіне хабарласыңыз.",
+    "Other account":"Басқа аккаунт","Your account":"Сіздің аккаунт","transactions":"транзакция",
     "Search notes...":"Жазбалардан іздеу…","All accounts":"Барлық шоттар","Apply":"Қолдану",
     "No transactions found":"Транзакциялар табылмады",
     "Overview":"Шолу","Due:":"Мерзімі:","of each month":"ай сайын",
@@ -2026,6 +2063,104 @@ function GoalsCard({goals,accounts,settings,onGoalsChange,t}){
 
 // ── CONTRIBUTE MODAL ──
 // Lets the user allocate a specific amount toward a goal as a virtual reservation.
+// Two-step modal for linking an email to the current Telegram account.
+// Step 1: collect email -> POST /api/auth/link/email/start -> server emails a code
+// Step 2: collect code -> POST /api/auth/link/email/verify -> on success, mark linked in settings
+// On "conflict" (email already linked to another account), shows a placeholder dialog
+// since proper merge UX hasn't been built yet — user is told to use a different email.
+function LinkEmailModal({open,onClose,settings,onSettingsChange,t}){
+  const[step,setStep]=useState("email");
+  const[email,setEmail]=useState("");
+  const[code,setCode]=useState("");
+  const[requestId,setRequestId]=useState(null);
+  const[err,setErr]=useState(null);
+  const[loading,setLoading]=useState(false);
+  const[conflict,setConflict]=useState(null);
+  const lang=settings.uiLanguage||"English";
+  // Reset state every time the modal opens so reopening starts fresh
+  useEffect(()=>{
+    if(open){setStep("email");setEmail("");setCode("");setRequestId(null);setErr(null);setConflict(null);}
+  },[open]);
+  const sendCode=async()=>{
+    setErr(null);
+    const trimmed=email.trim().toLowerCase();
+    if(!trimmed||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)){
+      setErr(tr("Invalid email",lang));return;
+    }
+    setLoading(true);
+    try{
+      const res=await API.linkEmailStart(trimmed);
+      if(res.ok){setRequestId(res.request_id);setStep("code");haptic();}
+      else setErr(res.error||"Failed to send code");
+    }catch(e){setErr(e.message);}
+    finally{setLoading(false);}
+  };
+  const verifyCode=async()=>{
+    setErr(null);
+    if(!code||code.trim().length!==6){setErr(tr("Enter the 6-digit code",lang));return;}
+    setLoading(true);
+    try{
+      const res=await API.linkEmailVerify(requestId,code.trim());
+      if(res.ok){
+        // Persist locally so the UI shows "linked" without another roundtrip
+        onSettingsChange({...settings,linkedEmail:res.email});
+        setStep("success");haptic("heavy");
+        setTimeout(onClose,1600);
+      } else if(res.conflict){
+        setConflict(res);setStep("conflict");haptic();
+      } else {
+        setErr(res.error||"Invalid code");
+      }
+    }catch(e){setErr(e.message);}
+    finally{setLoading(false);}
+  };
+  if(!open)return null;
+  const inp={width:"100%",background:t.bgInput,color:t.text,border:`1px solid ${t.border}`,borderRadius:10,padding:"12px 14px",fontSize:16,fontFamily:"system-ui,sans-serif",boxSizing:"border-box",outline:"none"};
+  const btnPrimary={width:"100%",background:loading?t.bgInput:"#10b981",color:"#fff",border:"none",borderRadius:10,padding:"13px",fontSize:15,fontWeight:600,cursor:loading?"wait":"pointer",fontFamily:"system-ui,sans-serif",opacity:loading?0.6:1};
+  return(
+    <Modal open={open} onClose={onClose} title={tr("Link Email",lang)} t={t}>
+      {step==="email"&&(
+        <div>
+          <div style={{fontSize:13,color:t.textMuted,marginBottom:14,lineHeight:1.5}}>{tr("Add an email to sign in from other devices and never lose your data.",lang)}</div>
+          <input value={email} onChange={e=>setEmail(e.target.value)} type="email" inputMode="email" autoCapitalize="none" autoCorrect="off" placeholder="you@example.com" style={inp}/>
+          {err&&<div style={{fontSize:12,color:"#ef4444",marginTop:8}}>{err}</div>}
+          <button onClick={sendCode} disabled={loading} style={{...btnPrimary,marginTop:14}}>{loading?tr("Sending...",lang):tr("Send code",lang)}</button>
+        </div>
+      )}
+      {step==="code"&&(
+        <div>
+          <div style={{fontSize:13,color:t.textMuted,marginBottom:6,lineHeight:1.5}}>{tr("We sent a 6-digit code to",lang)}</div>
+          <div style={{fontSize:14,fontWeight:600,color:t.text,marginBottom:14}}>{email}</div>
+          <input value={code} onChange={e=>setCode(e.target.value.replace(/[^0-9]/g,"").slice(0,6))} type="text" inputMode="numeric" pattern="[0-9]*" maxLength={6} placeholder="000000" style={{...inp,fontSize:24,letterSpacing:"6px",textAlign:"center",fontFamily:"ui-monospace,monospace"}} autoFocus/>
+          {err&&<div style={{fontSize:12,color:"#ef4444",marginTop:8}}>{err}</div>}
+          <button onClick={verifyCode} disabled={loading} style={{...btnPrimary,marginTop:14}}>{loading?tr("Verifying...",lang):tr("Verify",lang)}</button>
+          <button onClick={()=>setStep("email")} style={{width:"100%",background:"transparent",color:t.textMuted,border:"none",padding:"10px",fontSize:13,cursor:"pointer",marginTop:6}}>{tr("Use a different email",lang)}</button>
+        </div>
+      )}
+      {step==="success"&&(
+        <div style={{textAlign:"center",padding:"20px 0"}}>
+          <div style={{fontSize:48,marginBottom:12}}>✅</div>
+          <div style={{fontSize:16,fontWeight:600,color:t.text,marginBottom:6}}>{tr("Email linked",lang)}</div>
+          <div style={{fontSize:13,color:t.textMuted}}>{email}</div>
+        </div>
+      )}
+      {step==="conflict"&&conflict&&(
+        <div>
+          <div style={{fontSize:14,color:"#f59e0b",fontWeight:600,marginBottom:10}}>⚠️ {tr("Email already in use",lang)}</div>
+          <div style={{fontSize:13,color:t.textMuted,lineHeight:1.5,marginBottom:14}}>
+            {tr("This email is linked to another Saqta account. Account merging isn't supported yet — please use a different email or reach out to support.",lang)}
+          </div>
+          <div style={{background:t.bgCard2,borderRadius:10,padding:"12px",fontSize:12,color:t.text,marginBottom:14}}>
+            <div style={{marginBottom:6}}><b>{tr("Other account",lang)}:</b> {conflict.other_account?.transaction_count||0} {tr("transactions",lang)}</div>
+            <div><b>{tr("Your account",lang)}:</b> {conflict.current_account?.transaction_count||0} {tr("transactions",lang)}</div>
+          </div>
+          <button onClick={onClose} style={btnPrimary}>{tr("Got it",lang)}</button>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 // No real money moves between accounts — this is just intent tracking.
 // Optional account selector + note for context.
 function ContributeModal({goal,accounts,settings,t,onClose,onSave}){
@@ -3890,6 +4025,7 @@ function BudgetSuggestionBanner({categories,transactions,settings,onCategoriesCh
 
 function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,settings,onSettingsChange,onAccountsChange,onCategoriesChange,onFixedChange,onGoalsChange,onTransactionsChange,onReset,onRefreshRates,onExport,t}){
   const[sec,setSec]=useState(null);
+  const[showLinkEmail,setShowLinkEmail]=useState(false);
   const[emailCopied,setEmailCopied]=useState(false);
   const copyEmail=()=>{
     const email="bex.manapov@gmail.com";
@@ -4101,6 +4237,34 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
           </div>
         ))}
       </div>
+
+      {/* ─── SIGN IN / EMAIL LINKING ─── */}
+      {/* Shows current linked email (if any) and a button to link one. Lets users sign in
+          from native apps later using the same account. */}
+      <Section k="signin" label={tr("Sign In",settings.uiLanguage)} icon="🔐"/>
+      {sec==="signin"&&(
+        <div className="accordion-open" style={{background:t.bgCard2,borderRadius:12,padding:"14px",border:`1px solid ${t.border}`,marginBottom:12}}>
+          {settings.linkedEmail?(
+            <div>
+              <div style={{fontSize:11,color:t.textMuted,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.4px",fontWeight:600}}>{tr("Linked Email",settings.uiLanguage)}</div>
+              <div style={{display:"flex",alignItems:"center",gap:10,background:t.bgCard,padding:"10px 12px",borderRadius:10,border:`1px solid ${t.border}`}}>
+                <div style={{width:32,height:32,borderRadius:"50%",background:"#10b98122",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                  <i className="ti ti-check" style={{fontSize:16,color:"#10b981"}} aria-hidden="true"/>
+                </div>
+                <div style={{flex:1,minWidth:0,fontSize:13,color:t.text,wordBreak:"break-all"}}>{settings.linkedEmail}</div>
+              </div>
+              <div style={{fontSize:11,color:t.textMuted,marginTop:8,lineHeight:1.5}}>{tr("You can sign in on other devices using this email.",settings.uiLanguage)}</div>
+            </div>
+          ):(
+            <div>
+              <div style={{fontSize:13,color:t.text,marginBottom:8,lineHeight:1.5}}>{tr("Link an email to sign in from our iOS/Android apps and never lose your data.",settings.uiLanguage)}</div>
+              <button onClick={()=>{haptic();setShowLinkEmail(true);}} style={{width:"100%",background:"#10b981",color:"#fff",border:"none",borderRadius:10,padding:"12px",fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"system-ui,sans-serif"}}>
+                ✉️ {tr("Link Email",settings.uiLanguage)}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       <Section k="accounts" label={tr("Accounts",settings.uiLanguage)} icon="🏦"/>
       {sec==="accounts"&&(
@@ -4686,6 +4850,8 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
         </button>
         <div style={{fontSize:11,color:t.textMuted,marginTop:8,textAlign:"center"}}>Clears all accounts, transactions, and settings on this device and in the cloud.</div>
       </div>
+
+      <LinkEmailModal open={showLinkEmail} onClose={()=>setShowLinkEmail(false)} settings={settings} onSettingsChange={onSettingsChange} t={t}/>
     </div>
   );
 }
