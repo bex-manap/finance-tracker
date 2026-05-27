@@ -5009,16 +5009,32 @@ function App(){
     let cancelled=false;
     (async()=>{
       let accs=null,cats=null,sets=null,fxd=null,gls=null,txns=[];
+      // Hard 4-second cap on the entire CloudStorage init phase. If CS is slow or stuck
+      // (e.g. chunked-storage migration with many old keys for legacy users), we abandon
+      // the in-flight reads and fall back to localStorage so the UI never gets stuck on the
+      // loading screen. CS work continues in the background — server sync below will
+      // handle any data the user has on the server side.
+      const CS_INIT_TIMEOUT_MS=4000;
       try{
-        // Try to load from CloudStorage first; falls back to localStorage if CS unavailable or times out.
-        accs=await STORE.get("ft_accounts",null);
-        cats=await STORE.get("ft_categories",null);
-        sets=await STORE.get("ft_settings",null);
-        fxd=await STORE.get("ft_fixed",null);
-        gls=await STORE.get("ft_goals",null);
-        txns=await STORE.getAllTransactions();
+        await Promise.race([
+          (async()=>{
+            accs=await STORE.get("ft_accounts",null);
+            cats=await STORE.get("ft_categories",null);
+            sets=await STORE.get("ft_settings",null);
+            fxd=await STORE.get("ft_fixed",null);
+            gls=await STORE.get("ft_goals",null);
+            txns=await STORE.getAllTransactions();
+          })(),
+          new Promise((_,rej)=>setTimeout(()=>rej(new Error("cs-init-timeout")),CS_INIT_TIMEOUT_MS))
+        ]);
       }catch(e){
-        console.error("Load error, falling back to localStorage:",e);
+        if(e&&e.message==="cs-init-timeout"){
+          console.warn(`[INIT] CloudStorage took >${CS_INIT_TIMEOUT_MS}ms — falling back to localStorage. Background work continues.`);
+          // Lightweight telemetry — lets us see who hits this in analytics
+          try{track("app_init_cs_timeout");}catch{}
+        }else{
+          console.error("Load error, falling back to localStorage:",e);
+        }
       }
 
       try{
