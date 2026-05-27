@@ -2068,7 +2068,7 @@ function GoalsCard({goals,accounts,settings,onGoalsChange,t}){
 // Step 2: collect code -> POST /api/auth/link/email/verify -> on success, mark linked in settings
 // On "conflict" (email already linked to another account), shows a placeholder dialog
 // since proper merge UX hasn't been built yet — user is told to use a different email.
-function LinkEmailModal({open,onClose,settings,onSettingsChange,t}){
+function LinkEmailModal({open,onClose,settings,identifiers,onIdentifiersChange,t}){
   const[step,setStep]=useState("email");
   const[email,setEmail]=useState("");
   const[code,setCode]=useState("");
@@ -2102,8 +2102,12 @@ function LinkEmailModal({open,onClose,settings,onSettingsChange,t}){
     try{
       const res=await API.linkEmailVerify(requestId,code.trim());
       if(res.ok){
-        // Persist locally so the UI shows "linked" without another roundtrip
-        onSettingsChange({...settings,linkedEmail:res.email});
+        // Optimistically update identifiers — server will return the same on next sync.
+        // We add the new email row in-place so the UI flips to "linked" immediately.
+        const next=[...(identifiers||[]).filter(i=>!(i.type==="email"&&i.value===res.email)),
+                    {type:"email",value:res.email,is_recovery:false,verified_at:Date.now()}];
+        onIdentifiersChange(next);
+        LS.set("ft_identifiers",next);
         setStep("success");haptic("heavy");
         setTimeout(onClose,1600);
       } else if(res.conflict){
@@ -4023,7 +4027,7 @@ function BudgetSuggestionBanner({categories,transactions,settings,onCategoriesCh
   );
 }
 
-function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,settings,onSettingsChange,onAccountsChange,onCategoriesChange,onFixedChange,onGoalsChange,onTransactionsChange,onReset,onRefreshRates,onExport,t}){
+function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,settings,identifiers,onIdentifiersChange,onSettingsChange,onAccountsChange,onCategoriesChange,onFixedChange,onGoalsChange,onTransactionsChange,onReset,onRefreshRates,onExport,t}){
   const[sec,setSec]=useState(null);
   const[showLinkEmail,setShowLinkEmail]=useState(false);
   const[emailCopied,setEmailCopied]=useState(false);
@@ -4239,32 +4243,35 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
       </div>
 
       {/* ─── SIGN IN / EMAIL LINKING ─── */}
-      {/* Shows current linked email (if any) and a button to link one. Lets users sign in
-          from native apps later using the same account. */}
+      {/* Reads `identifiers` (server truth) — not settings — so the linked state can't desync
+          between client and server. After successful link, sync hydrates identifiers automatically. */}
       <Section k="signin" label={tr("Sign In",settings.uiLanguage)} icon="🔐"/>
-      {sec==="signin"&&(
-        <div className="accordion-open" style={{background:t.bgCard2,borderRadius:12,padding:"14px",border:`1px solid ${t.border}`,marginBottom:12}}>
-          {settings.linkedEmail?(
-            <div>
-              <div style={{fontSize:11,color:t.textMuted,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.4px",fontWeight:600}}>{tr("Linked Email",settings.uiLanguage)}</div>
-              <div style={{display:"flex",alignItems:"center",gap:10,background:t.bgCard,padding:"10px 12px",borderRadius:10,border:`1px solid ${t.border}`}}>
-                <div style={{width:32,height:32,borderRadius:"50%",background:"#10b98122",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                  <i className="ti ti-check" style={{fontSize:16,color:"#10b981"}} aria-hidden="true"/>
+      {sec==="signin"&&(()=>{
+        const linkedEmail=(identifiers||[]).find(i=>i.type==="email"&&!i.is_recovery);
+        return(
+          <div className="accordion-open" style={{background:t.bgCard2,borderRadius:12,padding:"14px",border:`1px solid ${t.border}`,marginBottom:12}}>
+            {linkedEmail?(
+              <div>
+                <div style={{fontSize:11,color:t.textMuted,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.4px",fontWeight:600}}>{tr("Linked Email",settings.uiLanguage)}</div>
+                <div style={{display:"flex",alignItems:"center",gap:10,background:t.bgCard,padding:"10px 12px",borderRadius:10,border:`1px solid ${t.border}`}}>
+                  <div style={{width:32,height:32,borderRadius:"50%",background:"#10b98122",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    <i className="ti ti-check" style={{fontSize:16,color:"#10b981"}} aria-hidden="true"/>
+                  </div>
+                  <div style={{flex:1,minWidth:0,fontSize:13,color:t.text,wordBreak:"break-all"}}>{linkedEmail.value}</div>
                 </div>
-                <div style={{flex:1,minWidth:0,fontSize:13,color:t.text,wordBreak:"break-all"}}>{settings.linkedEmail}</div>
+                <div style={{fontSize:11,color:t.textMuted,marginTop:8,lineHeight:1.5}}>{tr("You can sign in on other devices using this email.",settings.uiLanguage)}</div>
               </div>
-              <div style={{fontSize:11,color:t.textMuted,marginTop:8,lineHeight:1.5}}>{tr("You can sign in on other devices using this email.",settings.uiLanguage)}</div>
-            </div>
-          ):(
-            <div>
-              <div style={{fontSize:13,color:t.text,marginBottom:8,lineHeight:1.5}}>{tr("Link an email to sign in from our iOS/Android apps and never lose your data.",settings.uiLanguage)}</div>
-              <button onClick={()=>{haptic();setShowLinkEmail(true);}} style={{width:"100%",background:"#10b981",color:"#fff",border:"none",borderRadius:10,padding:"12px",fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"system-ui,sans-serif"}}>
-                ✉️ {tr("Link Email",settings.uiLanguage)}
-              </button>
-            </div>
-          )}
-        </div>
-      )}
+            ):(
+              <div>
+                <div style={{fontSize:13,color:t.text,marginBottom:8,lineHeight:1.5}}>{tr("Link an email to sign in from our iOS/Android apps and never lose your data.",settings.uiLanguage)}</div>
+                <button onClick={()=>{haptic();setShowLinkEmail(true);}} style={{width:"100%",background:"#10b981",color:"#fff",border:"none",borderRadius:10,padding:"12px",fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"system-ui,sans-serif"}}>
+                  ✉️ {tr("Link Email",settings.uiLanguage)}
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       <Section k="accounts" label={tr("Accounts",settings.uiLanguage)} icon="🏦"/>
       {sec==="accounts"&&(
@@ -4851,7 +4858,7 @@ function SettingsScreen({accounts,categories,fixedExpenses,goals,transactions,se
         <div style={{fontSize:11,color:t.textMuted,marginTop:8,textAlign:"center"}}>Clears all accounts, transactions, and settings on this device and in the cloud.</div>
       </div>
 
-      <LinkEmailModal open={showLinkEmail} onClose={()=>setShowLinkEmail(false)} settings={settings} onSettingsChange={onSettingsChange} t={t}/>
+      <LinkEmailModal open={showLinkEmail} onClose={()=>setShowLinkEmail(false)} settings={settings} identifiers={identifiers} onIdentifiersChange={onIdentifiersChange} t={t}/>
     </div>
   );
 }
@@ -5154,6 +5161,10 @@ function App(){
   const[fixedExpenses,setFixedRaw]=useState(DEF_FIXED);
   const[goals,setGoalsRaw]=useState(DEF_GOALS);
   const[settings,setSettingsRaw]=useState(DEF_SETTINGS);
+  // Server-side truth for which auth identifiers (email, telegram, apple, etc.) are linked to
+  // this account. Hydrated from /api/data/sync on every load. Auth UI (Sign In section, link modal)
+  // reads from here — never from settings — so the state can't desync between client and server.
+  const[identifiers,setIdentifiers]=useState([]);
   const[tab,setTab]=useState("home");
   const[addModal,setAddModal]=useState(false);
   const[addMode,setAddMode]=useState("expense");
@@ -5308,6 +5319,9 @@ function App(){
         setFixedRaw(fxd||DEF_FIXED);
         setGoalsRaw(gls||DEF_GOALS);
         setTransactionsRaw(txns||[]);
+        // Offline-first: read identifiers from LS so the Sign In UI works before sync arrives
+        const cachedIds=LS.get("ft_identifiers",null);
+        if(Array.isArray(cachedIds))setIdentifiers(cachedIds);
       }catch(e){console.error("State set error:",e);}
 
       // Hide splash screen
@@ -5352,6 +5366,12 @@ function App(){
               const mergedTxns=Array.from(map.values());
               setTransactionsRaw(mergedTxns);
               LS.set("ft_transactions",mergedTxns);
+            }
+
+            // Apply identifiers — server-side truth for what's linked to this account
+            if(Array.isArray(data.identifiers)){
+              setIdentifiers(data.identifiers);
+              LS.set("ft_identifiers",data.identifiers);
             }
 
             // Apply state delta (server fields override local where present)
@@ -5615,7 +5635,7 @@ function App(){
         {tab==="home"&&<HomeScreen accounts={accountsWithBalances} transactions={transactions} categories={categories} fixedExpenses={fixedExpenses} goals={goals} settings={settings} onSettingsChange={setSettings} onAddTxn={(mode)=>{setAddMode(mode);setAddModal(true);}} onGoalsChange={setGoals} onTabChange={setTab} t={t} onTxnClick={setSelTxn}/>}
         {tab==="analytics"&&<AnalyticsScreen transactions={transactions} categories={categories} settings={settings} t={t}/>}
         {tab==="history"&&<HistoryScreen transactions={transactions} accounts={accountsWithBalances} categories={categories} settings={settings} onTxnClick={setSelTxn} t={t}/>}
-        {tab==="settings"&&<SettingsScreen accounts={accountsWithBalances} categories={categories} fixedExpenses={fixedExpenses} goals={goals} transactions={transactions} settings={settings} onSettingsChange={setSettings} onAccountsChange={setAccounts} onCategoriesChange={setCategories} onFixedChange={setFixed} onGoalsChange={setGoals} onTransactionsChange={setTransactions} onReset={handleReset} onRefreshRates={handleRefreshRates} onExport={handleExportCSV} t={t}/>}
+        {tab==="settings"&&<SettingsScreen accounts={accountsWithBalances} categories={categories} fixedExpenses={fixedExpenses} goals={goals} transactions={transactions} settings={settings} identifiers={identifiers} onIdentifiersChange={setIdentifiers} onSettingsChange={setSettings} onAccountsChange={setAccounts} onCategoriesChange={setCategories} onFixedChange={setFixed} onGoalsChange={setGoals} onTransactionsChange={setTransactions} onReset={handleReset} onRefreshRates={handleRefreshRates} onExport={handleExportCSV} t={t}/>}
       </div>
       <div style={{flexShrink:0,display:"flex",alignItems:"center",background:t.tabBg,borderTop:`1px solid ${t.tabBorder}`,padding:"6px 0 calc(10px + env(safe-area-inset-bottom, 0px))",zIndex:50}}>
         {TABS.map(({k,icon,label})=>{
