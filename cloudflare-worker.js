@@ -250,7 +250,7 @@ async function handleAdmin(request, env, url) {
   } else {
     adminPassword = env.ADMIN_PASSWORD;
   }
-  if (password !== adminPassword) return needsAuth();
+  if (!timingSafeEqualStr(password, adminPassword)) return needsAuth();
 
   // JSON API endpoints under /admin/api
   if (url.pathname.startsWith('/admin/api/')) {
@@ -1136,7 +1136,7 @@ async function loadCosts() {
   const el = document.getElementById('cost-breakdown');
   if (!c.breakdown.length) { el.innerHTML = '<div class="empty">No AI requests in the last 30 days.</div>'; return; }
   el.innerHTML = '<table style="margin-top:8px"><thead><tr><th>Language</th><th>Model</th><th>Requests</th><th>Cost</th></tr></thead><tbody>' +
-    c.breakdown.map(b => \`<tr><td>\${b.lang}</td><td>\${b.model}</td><td>\${b.count}</td><td>$\${b.cost}</td></tr>\`).join('') +
+    c.breakdown.map(b => \`<tr><td>\${escapeHtml(b.lang)}</td><td>\${escapeHtml(b.model)}</td><td>\${b.count}</td><td>$\${b.cost}</td></tr>\`).join('') +
     '</tbody></table>';
 }
 
@@ -1290,7 +1290,7 @@ async function showUser(u) {
   const eventsHtml = events.length ? events.map(e => \`
     <div class="event-line">
       <span class="ts">\${fmtDate(e.ts)}</span>
-      <span class="type">\${e.event_type}</span>
+      <span class="type">\${escapeHtml(e.event_type)}</span>
       \${e.metadata && e.metadata !== '{}' ? '<span class="small" style="margin-left:6px">' + escapeHtml(e.metadata) + '</span>' : ''}
     </div>
   \`).join('') : '<div class="small">No events recorded.</div>';
@@ -1298,7 +1298,7 @@ async function showUser(u) {
   document.getElementById('modal-content').innerHTML = \`
     <h2>\${escapeHtml(u.first_name || '—')} \${u.username ? '(@' + escapeHtml(u.username) + ')' : ''}</h2>
     <div class="small" style="margin-bottom:12px">
-      ID: \${u.tg_id} · Country: \${u.country || '—'} · Platform: \${u.platform || '—'}<br>
+      ID: \${u.tg_id} · Country: \${escapeHtml(u.country || '—')} · Platform: \${escapeHtml(u.platform || '—')}<br>
       Registered: \${fmtDate(u.registered_at)} · Last active: \${fmtDate(u.last_active)}<br>
       Sessions: \${u.total_sessions || 0} · Transactions: \${u.txn_count || 0} · AI calls: \${u.ai_request_count || 0}<br>
       Streak: \${u.current_streak || 0} (longest \${u.longest_streak || 0})<br>
@@ -1916,20 +1916,15 @@ async function sendTelegramMessage(env, chatId, text, extra = {}) {
 // ─────────────────────────────────────────────────────────────────────────────
 async function handleParseStatement(request, env) {
   // Handle CORS preflight
+  const baseCors = corsHeaders(request, env);
   if (request.method === 'OPTIONS') {
-    return new Response(null, {
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type'
-      }
-    });
+    return new Response(null, { headers: baseCors });
   }
   if (request.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 });
   }
 
-  const cors = { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' };
+  const cors = { ...baseCors, 'Content-Type': 'application/json' };
 
   try {
     const body = await request.json();
@@ -1941,6 +1936,15 @@ async function handleParseStatement(request, env) {
     // Sanity check on size — base64 inflates ~33%, cap raw input around 8MB to avoid timeouts
     if (pdf_base64.length > 11_000_000) {
       return new Response(JSON.stringify({ ok: false, error: 'PDF too large (max ~8MB). Try a shorter date range.' }), { status: 400, headers: cors });
+    }
+
+    // Per-IP rate limit — each call runs an expensive Claude vision request, so cap abuse/cost.
+    // (tg_id here is client-supplied and unverified, so IP is the reliable key.) Auth requirement
+    // is deferred to M2 when the Flutter client can authenticate.
+    await ensureDataTables(env);
+    const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+    if (!await checkRateLimit(env, `parse:ip:${ip}`, 20, 60 * 60 * 1000)) {
+      return new Response(JSON.stringify({ ok: false, error: 'Too many requests. Try again in a bit.' }), { status: 429, headers: cors });
     }
 
     // Build a category list for the prompt. Expense categories only — income/transfers detection
@@ -2025,9 +2029,11 @@ Output shape (strict):
     });
 
     if (!anthropicRes.ok) {
+      // Log upstream detail server-side only — never echo it to the client (could leak key/account state).
       const errText = await anthropicRes.text();
-      console.error('Anthropic parse failed:', errText);
-      return new Response(JSON.stringify({ ok: false, error: 'AI parsing failed: ' + anthropicRes.status }), { status: 500, headers: cors });
+      console.error('[parse-statement] Anthropic failed:', anthropicRes.status, errText.slice(0, 500));
+      const status = anthropicRes.status === 429 ? 429 : 502;
+      return new Response(JSON.stringify({ ok: false, error: 'AI service temporarily unavailable. Try again shortly.' }), { status, headers: cors });
     }
 
     const data = await anthropicRes.json();
@@ -2073,7 +2079,7 @@ Output shape (strict):
     }), { headers: cors });
   } catch (e) {
     console.error('parse-statement error:', e);
-    return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: cors });
+    return new Response(JSON.stringify({ ok: false, error: 'Parsing failed. Please try again.' }), { status: 500, headers: cors });
   }
 }
 
@@ -2083,14 +2089,40 @@ Output shape (strict):
 // must include a valid Telegram WebApp `initData` string for HMAC-based auth.
 // The `tg_id` is extracted from the verified initData — never trust the client.
 // ─────────────────────────────────────────────────────────────────────────────
+// Origins permitted to read API responses cross-origin. Auth is body initData /
+// bearer JWT (never cookies), so a foreign site can't forge an authenticated request
+// regardless — this allowlist is defense-in-depth. OFF by default (returns '*', today's
+// behavior) so deploying can't break the live app. To enable: set ALLOWED_ORIGINS to your
+// real app origin(s) — the scheme+host of APP_URL, e.g. "https://yourname.github.io"
+// (comma-separated for several). Once set, only listed origins get a matching CORS header.
+function allowedOrigin(request, env) {
+  const configured = ((env && env.ALLOWED_ORIGINS) || '')
+    .split(',').map(s => s.trim()).filter(Boolean);
+  // Empty, or an explicit "*" entry => allow all (today's behavior). Cloudflare requires a
+  // value, so set ALLOWED_ORIGINS="*" to mean "no restriction". Safe here because auth is
+  // body initData / bearer JWT, never cookies. List real origins to actually restrict.
+  if (!configured.length || configured.includes('*')) return '*';
+  const origin = request.headers.get('Origin');
+  if (!origin) return '*';                       // native app / non-browser: CORS not enforced
+  return configured.includes(origin) ? origin : configured[0];
+}
+function corsHeaders(request, env) {
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin(request, env),
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    // Authorization is required for native/web clients authenticating with a Bearer JWT.
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+  };
+}
+// Static fallback CORS, used by jsonResp when no per-request headers are threaded through.
 const dataCors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type'
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization'
 };
-const jsonResp = (data, status = 200) => new Response(JSON.stringify(data), {
+const jsonResp = (data, status = 200, cors = dataCors) => new Response(JSON.stringify(data), {
   status,
-  headers: { ...dataCors, 'Content-Type': 'application/json' }
+  headers: { ...cors, 'Content-Type': 'application/json' }
 });
 
 // Verify Telegram WebApp initData per https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
@@ -2362,32 +2394,46 @@ async function ensureAccountBackfill(env) {
 }
 
 async function handleDataApi(request, env, url) {
-  if (request.method === 'OPTIONS') return new Response(null, { headers: dataCors });
-  if (request.method !== 'POST')    return jsonResp({ error: 'Method not allowed' }, 405);
+  const cors = corsHeaders(request, env);
+  if (request.method === 'OPTIONS') return new Response(null, { headers: cors });
+  if (request.method !== 'POST')    return jsonResp({ error: 'Method not allowed' }, 405, cors);
   let body;
   try { body = await request.json(); }
-  catch { return jsonResp({ error: 'Invalid JSON' }, 400); }
-  const auth = await verifyInitData(body.initData, env.TELEGRAM_BOT_TOKEN);
-  if (!auth.ok) return jsonResp({ error: 'Auth failed', reason: auth.reason }, 401);
-  const tg_id = auth.user.id;
+  catch { return jsonResp({ error: 'Invalid JSON' }, 400, cors); }
   try {
     await ensureDataTables(env);
     // One-shot backfill: turns every legacy tg_id into a user_account + telegram identifier.
     // Idempotent (guarded by the migrations table), so safe to call on every request.
     await ensureAccountBackfill(env);
-    // Resolve the stable user_id (creates a new account if this is a brand-new tg_id)
-    const user_id = await getOrCreateUserForTelegram(env, auth.user);
+    // Accept either a Bearer JWT (email / native clients) or Telegram initData (Mini App).
+    const user_id = await resolveAuthUser(env, body, request);
+    if (!user_id) return jsonResp({ error: 'Auth failed' }, 401, cors);
+    // tg_id is still the write key for the legacy tables during the user_id transition.
+    // From initData we have it directly; for JWT users we look up their telegram identifier.
+    // It stays null for genuinely Telegram-less accounts — writes for those need the deferred
+    // user_transactions/user_state rebuild; reads (sync) already work by user_id alone.
+    let tg_id = null;
+    if (body.initData) {
+      const a = await verifyInitData(body.initData, env.TELEGRAM_BOT_TOKEN);
+      if (a.ok) tg_id = a.user.id;
+    }
+    if (tg_id == null) {
+      const row = await env.DB.prepare(
+        `SELECT value FROM user_identifiers WHERE type = 'telegram' AND user_id = ? LIMIT 1`
+      ).bind(user_id).first();
+      if (row) tg_id = parseInt(row.value, 10);
+    }
     const sub = url.pathname.slice('/api/data/'.length);
-    if (sub === 'sync')       return jsonResp(await dataSync(env, user_id, tg_id, body));
-    if (sub === 'txn')        return jsonResp(await dataSaveTxn(env, user_id, tg_id, body));
-    if (sub === 'txn-delete') return jsonResp(await dataDeleteTxn(env, user_id, tg_id, body));
-    if (sub === 'state')      return jsonResp(await dataSaveState(env, user_id, tg_id, body));
-    if (sub === 'migrate')    return jsonResp(await dataMigrate(env, user_id, tg_id, body));
-    if (sub === 'reset')      return jsonResp(await dataReset(env, user_id, tg_id));
-    return jsonResp({ error: 'Not found' }, 404);
+    if (sub === 'sync')       return jsonResp(await dataSync(env, user_id, tg_id, body), 200, cors);
+    if (sub === 'txn')        return jsonResp(await dataSaveTxn(env, user_id, tg_id, body), 200, cors);
+    if (sub === 'txn-delete') return jsonResp(await dataDeleteTxn(env, user_id, tg_id, body), 200, cors);
+    if (sub === 'state')      return jsonResp(await dataSaveState(env, user_id, tg_id, body), 200, cors);
+    if (sub === 'migrate')    return jsonResp(await dataMigrate(env, user_id, tg_id, body), 200, cors);
+    if (sub === 'reset')      return jsonResp(await dataReset(env, user_id, tg_id), 200, cors);
+    return jsonResp({ error: 'Not found' }, 404, cors);
   } catch (e) {
     console.error('[data-api]', e);
-    return jsonResp({ error: 'Internal error', detail: e.message }, 500);
+    return jsonResp({ error: 'Internal error' }, 500, cors);
   }
 }
 
@@ -2556,10 +2602,18 @@ function generateOtpCode() {
   return String(num % 1000000).padStart(6, '0');
 }
 
-// SHA-256 hex hash. We store hashed OTPs so DB compromise doesn't leak live codes.
-async function hashOtpCode(code) {
-  const enc = new TextEncoder().encode(code);
-  const buf = await crypto.subtle.digest('SHA-256', enc);
+// HMAC-SHA256 of the code keyed by a server-side pepper, stored instead of the raw code.
+// A plain unsalted SHA-256 of a 6-digit code is trivially precomputable (only 1M values),
+// so a DB read would expose live codes. Keying with a secret pepper makes that infeasible
+// without also stealing the secret. Falls back to plain SHA-256 if no pepper is configured,
+// so auth keeps working — set OTP_PEPPER (or rely on JWT_SECRET) to enable hardening.
+async function hashOtpCode(code, env) {
+  const pepper = (env && (env.OTP_PEPPER || env.JWT_SECRET)) || '';
+  if (pepper) {
+    const sig = await hmacSign(pepper, code);
+    return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(code));
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
@@ -2721,13 +2775,24 @@ async function signJwt(payload, secret, ttlMs) {
   const sig = await hmacSign(secret, `${headerEnc}.${bodyEnc}`);
   return `${headerEnc}.${bodyEnc}.${b64UrlEncode(sig)}`;
 }
+// Constant-time string comparison — avoids leaking secrets (passwords, signatures)
+// via early-exit response timing. Length mismatch returns false immediately.
+function timingSafeEqualStr(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const ea = new TextEncoder().encode(a);
+  const eb = new TextEncoder().encode(b);
+  if (ea.length !== eb.length) return false;
+  let diff = 0;
+  for (let i = 0; i < ea.length; i++) diff |= ea[i] ^ eb[i];
+  return diff === 0;
+}
 async function verifyJwt(token, secret) {
   if (typeof token !== 'string') return null;
   const parts = token.split('.');
   if (parts.length !== 3) return null;
   try {
     const expected = b64UrlEncode(await hmacSign(secret, `${parts[0]}.${parts[1]}`));
-    if (expected !== parts[2]) return null;
+    if (!timingSafeEqualStr(expected, parts[2])) return null;
     const payload = JSON.parse(b64UrlDecodeStr(parts[1]));
     if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) return null;
     return payload;
@@ -2790,25 +2855,26 @@ async function resolveAuthUser(env, body, request) {
 }
 
 async function handleAuthApi(request, env, url) {
-  if (request.method === 'OPTIONS') return new Response(null, { headers: dataCors });
-  if (request.method !== 'POST')    return jsonResp({ error: 'Method not allowed' }, 405);
+  const cors = corsHeaders(request, env);
+  if (request.method === 'OPTIONS') return new Response(null, { headers: cors });
+  if (request.method !== 'POST')    return jsonResp({ error: 'Method not allowed' }, 405, cors);
   let body;
-  try { body = await request.json(); } catch { return jsonResp({ error: 'Invalid JSON' }, 400); }
+  try { body = await request.json(); } catch { return jsonResp({ error: 'Invalid JSON' }, 400, cors); }
   try {
     await ensureDataTables(env);
     const sub = url.pathname.slice('/api/auth/'.length);
-    if (sub === 'email/start')         return jsonResp(await authEmailStart(env, body, request, /*linking*/ false));
-    if (sub === 'email/verify')        return jsonResp(await authEmailVerify(env, body, request, /*linking*/ false));
-    if (sub === 'link/email/start')    return jsonResp(await authEmailStart(env, body, request, /*linking*/ true));
-    if (sub === 'link/email/verify')   return jsonResp(await authEmailVerify(env, body, request, /*linking*/ true));
-    if (sub === 'unlink')              return jsonResp(await authUnlink(env, body, request));
-    if (sub === 'refresh')             return jsonResp(await authRefresh(env, body, request));
-    if (sub === 'sessions/list')       return jsonResp(await authSessionsList(env, body, request));
-    if (sub === 'sessions/revoke')     return jsonResp(await authSessionsRevoke(env, body, request));
-    return jsonResp({ error: 'Not found' }, 404);
+    if (sub === 'email/start')         return jsonResp(await authEmailStart(env, body, request, /*linking*/ false), 200, cors);
+    if (sub === 'email/verify')        return jsonResp(await authEmailVerify(env, body, request, /*linking*/ false), 200, cors);
+    if (sub === 'link/email/start')    return jsonResp(await authEmailStart(env, body, request, /*linking*/ true), 200, cors);
+    if (sub === 'link/email/verify')   return jsonResp(await authEmailVerify(env, body, request, /*linking*/ true), 200, cors);
+    if (sub === 'unlink')              return jsonResp(await authUnlink(env, body, request), 200, cors);
+    if (sub === 'refresh')             return jsonResp(await authRefresh(env, body, request), 200, cors);
+    if (sub === 'sessions/list')       return jsonResp(await authSessionsList(env, body, request), 200, cors);
+    if (sub === 'sessions/revoke')     return jsonResp(await authSessionsRevoke(env, body, request), 200, cors);
+    return jsonResp({ error: 'Not found' }, 404, cors);
   } catch (e) {
     console.error('[auth-api]', e);
-    return jsonResp({ error: 'Internal error', detail: e.message }, 500);
+    return jsonResp({ error: 'Internal error' }, 500, cors);
   }
 }
 
@@ -2839,7 +2905,7 @@ async function authEmailStart(env, body, request, linking) {
 
   // Generate, hash, store
   const code = generateOtpCode();
-  const code_hash = await hashOtpCode(code);
+  const code_hash = await hashOtpCode(code, env);
   const request_id = crypto.randomUUID();
   const now = Date.now();
   const expires_at = now + 10 * 60 * 1000; // 10 minutes
@@ -2890,9 +2956,9 @@ async function authEmailVerify(env, body, request, linking) {
     current_user_id = reqUserId;
   }
 
-  // Compare code (constant-time-ish via fixed-length hex compare)
-  const code_hash = await hashOtpCode(String(code).trim());
-  if (code_hash !== row.code_hash) {
+  // Compare code hashes in constant time (defense-in-depth alongside the attempts lock)
+  const code_hash = await hashOtpCode(String(code).trim(), env);
+  if (!timingSafeEqualStr(code_hash, row.code_hash)) {
     await env.DB.prepare(`UPDATE auth_codes SET attempts = attempts + 1 WHERE id = ?`).bind(request_id).run();
     await logAuditEvent(env, { user_id: current_user_id, event_type: 'otp_invalid_code', identifier_type: 'email', identifier_value: row.identifier_value, ip });
     return { ok: false, error: 'Invalid code' };
@@ -2974,6 +3040,11 @@ async function authRefresh(env, body, request) {
   const refresh_token = (body.refresh_token || '').trim();
   if (!refresh_token) return { ok: false, error: 'Missing refresh_token' };
   const ip = request.headers.get('CF-Connecting-IP') || null;
+  // Rate-limit by IP — curbs brute-forcing of stolen refresh tokens. Legit clients
+  // refresh ~once per access-token lifetime (1h), so this is very generous.
+  if (!await checkRateLimit(env, `refresh:ip:${ip || 'unknown'}`, 20, 5 * 60 * 1000)) {
+    return { ok: false, error: 'Too many refresh attempts. Try again later.' };
+  }
   const hash = await sha256Hex(refresh_token);
   const row = await env.DB.prepare(
     `SELECT id, user_id, expires_at, revoked_at FROM sessions WHERE refresh_token_hash = ?`
@@ -3076,17 +3147,23 @@ async function authUnlink(env, body, request) {
 // Anthropic API proxy — default for any other path
 // ─────────────────────────────────────────────────────────────────────────────
 async function handleAnthropicProxy(request, env) {
+  const cors = corsHeaders(request, env);
   if (request.method === 'OPTIONS') {
-    return new Response(null, {
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-        'Access-Control-Max-Age': '86400'
-      }
-    });
+    return new Response(null, { headers: { ...cors, 'Access-Control-Max-Age': '86400' } });
   }
   if (request.method !== 'POST') return new Response('Method not allowed', { status: 405 });
+
+  // Per-IP rate limit — this endpoint spends the Anthropic API key, so cap abuse/cost.
+  // Fails open if the rate-limit store is unavailable so legit AI comments never break.
+  // (Auth requirement is deferred to M2; the current HTML Mini App calls this unauthenticated.)
+  const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+  try {
+    if (!await checkRateLimit(env, `proxy:ip:${ip}`, 120, 60 * 60 * 1000)) {
+      return new Response(JSON.stringify({ error: { type: 'rate_limited', message: 'Too many requests. Try again shortly.' } }), {
+        status: 429, headers: { 'Content-Type': 'application/json', ...cors }
+      });
+    }
+  } catch (e) { console.error('[proxy] rate-limit check failed (allowing):', e.message); }
 
   const body = await request.text();
   const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -3098,9 +3175,18 @@ async function handleAnthropicProxy(request, env) {
     },
     body
   });
+  if (!response.ok) {
+    // Never echo upstream error detail to the client (could leak key/account state). Log server-side.
+    const detail = await response.text();
+    console.error('[anthropic-proxy]', response.status, detail.slice(0, 500));
+    const status = response.status === 429 ? 429 : 502;
+    return new Response(JSON.stringify({ error: { type: 'upstream_error', message: 'AI service temporarily unavailable.' } }), {
+      status, headers: { 'Content-Type': 'application/json', ...cors }
+    });
+  }
   const data = await response.text();
   return new Response(data, {
     status: response.status,
-    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+    headers: { 'Content-Type': 'application/json', ...cors }
   });
 }
