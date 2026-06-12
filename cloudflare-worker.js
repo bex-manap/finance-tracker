@@ -2166,30 +2166,35 @@ async function verifyInitData(initData, botToken) {
 }
 
 async function ensureDataTables(env) {
-  // Legacy tables (kept for back-compat during dual-write transition; tg_id will be removed after stable)
+  // Data tables are keyed by user_id (the stable internal account id) so that
+  // Telegram-less accounts (email / Apple sign-in) can write, not just read.
+  // tg_id is kept as a nullable legacy column. Existing prod DBs created with the
+  // old tg_id PK are rebuilt to this shape by ensureUserIdPkMigration on first call.
   await env.DB.prepare(`
     CREATE TABLE IF NOT EXISTS user_transactions (
-      tg_id INTEGER NOT NULL,
+      user_id TEXT NOT NULL,
       txn_id TEXT NOT NULL,
       data TEXT NOT NULL,
       updated_at INTEGER NOT NULL,
       deleted INTEGER DEFAULT 0,
-      PRIMARY KEY (tg_id, txn_id)
+      tg_id INTEGER,
+      PRIMARY KEY (user_id, txn_id)
     )
   `).run();
   await env.DB.prepare(`
-    CREATE INDEX IF NOT EXISTS idx_user_txn_updated
-    ON user_transactions(tg_id, updated_at)
+    CREATE INDEX IF NOT EXISTS idx_txn_user_updated
+    ON user_transactions(user_id, updated_at)
   `).run();
   await env.DB.prepare(`
     CREATE TABLE IF NOT EXISTS user_state (
-      tg_id INTEGER PRIMARY KEY,
+      user_id TEXT PRIMARY KEY,
       accounts TEXT,
       categories TEXT,
       fixed_expenses TEXT,
       goals TEXT,
       settings TEXT,
-      updated_at INTEGER NOT NULL
+      updated_at INTEGER NOT NULL,
+      tg_id INTEGER
     )
   `).run();
 
@@ -2393,6 +2398,67 @@ async function ensureAccountBackfill(env) {
   console.log(`[MIGRATION] v2_account_backfill: created ${allTgIds.size} accounts.`);
 }
 
+// Final step of the tg_id → user_id transition: rebuild user_transactions and
+// user_state so their PRIMARY KEY is user_id (was tg_id). Until this runs, the
+// `tg_id INTEGER NOT NULL` constraint silently rejects writes from Telegram-less
+// accounts (email / Apple) — the exact path every store/new user takes. Runs once,
+// guarded by the migrations table, as a single atomic D1 batch() (transactional, so
+// a partial failure rolls back and retries on the next request). ensureAccountBackfill
+// runs first on every request, so every legacy row already carries a user_id; rows
+// without one are unreachable orphans and are intentionally not carried over.
+// Cloudflare D1 Time Travel is the external backup/rollback net.
+async function ensureUserIdPkMigration(env) {
+  const flag = await env.DB.prepare(`SELECT name FROM migrations WHERE name = 'v3_userid_pk'`).first();
+  if (flag) return; // already done
+  const now = Date.now();
+  await env.DB.batch([
+    // ── user_transactions → PK (user_id, txn_id); tg_id demoted to a nullable column ──
+    env.DB.prepare(`
+      CREATE TABLE IF NOT EXISTS user_transactions_v3 (
+        user_id TEXT NOT NULL,
+        txn_id TEXT NOT NULL,
+        data TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        deleted INTEGER DEFAULT 0,
+        tg_id INTEGER,
+        PRIMARY KEY (user_id, txn_id)
+      )
+    `),
+    env.DB.prepare(`
+      INSERT OR IGNORE INTO user_transactions_v3 (user_id, txn_id, data, updated_at, deleted, tg_id)
+      SELECT user_id, txn_id, data, updated_at, deleted, tg_id
+      FROM user_transactions WHERE user_id IS NOT NULL
+    `),
+    env.DB.prepare(`DROP TABLE user_transactions`),
+    env.DB.prepare(`ALTER TABLE user_transactions_v3 RENAME TO user_transactions`),
+    env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_txn_user_updated ON user_transactions(user_id, updated_at)`),
+    // ── user_state → PK (user_id); dedupe by newest updated_at (the email-user
+    //    auto-rowid quirk may have left several rows per user_id). ──
+    env.DB.prepare(`
+      CREATE TABLE IF NOT EXISTS user_state_v3 (
+        user_id TEXT PRIMARY KEY,
+        accounts TEXT,
+        categories TEXT,
+        fixed_expenses TEXT,
+        goals TEXT,
+        settings TEXT,
+        updated_at INTEGER NOT NULL,
+        tg_id INTEGER
+      )
+    `),
+    env.DB.prepare(`
+      INSERT OR IGNORE INTO user_state_v3 (user_id, accounts, categories, fixed_expenses, goals, settings, updated_at, tg_id)
+      SELECT user_id, accounts, categories, fixed_expenses, goals, settings, MAX(updated_at), tg_id
+      FROM user_state WHERE user_id IS NOT NULL GROUP BY user_id
+    `),
+    env.DB.prepare(`DROP TABLE user_state`),
+    env.DB.prepare(`ALTER TABLE user_state_v3 RENAME TO user_state`),
+    env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_state_user ON user_state(user_id)`),
+    env.DB.prepare(`INSERT INTO migrations (name, done_at) VALUES ('v3_userid_pk', ?)`).bind(now),
+  ]);
+  console.log('[MIGRATION] v3_userid_pk: user_transactions/user_state now keyed by user_id.');
+}
+
 async function handleDataApi(request, env, url) {
   const cors = corsHeaders(request, env);
   if (request.method === 'OPTIONS') return new Response(null, { headers: cors });
@@ -2405,13 +2471,15 @@ async function handleDataApi(request, env, url) {
     // One-shot backfill: turns every legacy tg_id into a user_account + telegram identifier.
     // Idempotent (guarded by the migrations table), so safe to call on every request.
     await ensureAccountBackfill(env);
+    // One-shot final cutover: rebuild the data tables to be keyed by user_id so
+    // Telegram-less accounts can WRITE. Guarded by the migrations table (runs once).
+    await ensureUserIdPkMigration(env);
     // Accept either a Bearer JWT (email / native clients) or Telegram initData (Mini App).
     const user_id = await resolveAuthUser(env, body, request);
     if (!user_id) return jsonResp({ error: 'Auth failed' }, 401, cors);
-    // tg_id is still the write key for the legacy tables during the user_id transition.
-    // From initData we have it directly; for JWT users we look up their telegram identifier.
-    // It stays null for genuinely Telegram-less accounts — writes for those need the deferred
-    // user_transactions/user_state rebuild; reads (sync) already work by user_id alone.
+    // Writes are keyed by user_id. We still resolve tg_id and store it as a legacy
+    // column when known (initData gives it directly; JWT users via their telegram
+    // identifier); it's simply null for Telegram-less accounts, which is now fine.
     let tg_id = null;
     if (body.initData) {
       const a = await verifyInitData(body.initData, env.TELEGRAM_BOT_TOKEN);
@@ -2493,11 +2561,12 @@ async function dataSaveTxn(env, user_id, tg_id, body) {
   if (!txn || !txn.id) return { ok: false, error: 'Missing txn' };
   const now = Date.now();
   await env.DB.prepare(`
-    INSERT INTO user_transactions (tg_id, user_id, txn_id, data, updated_at, deleted)
-    VALUES (?, ?, ?, ?, ?, 0)
-    ON CONFLICT(tg_id, txn_id) DO UPDATE SET
-      user_id = excluded.user_id, data = excluded.data, updated_at = excluded.updated_at, deleted = 0
-  `).bind(tg_id, user_id, txn.id, JSON.stringify(txn), now).run();
+    INSERT INTO user_transactions (user_id, txn_id, data, updated_at, deleted, tg_id)
+    VALUES (?, ?, ?, ?, 0, ?)
+    ON CONFLICT(user_id, txn_id) DO UPDATE SET
+      data = excluded.data, updated_at = excluded.updated_at, deleted = 0,
+      tg_id = COALESCE(excluded.tg_id, user_transactions.tg_id)
+  `).bind(user_id, txn.id, JSON.stringify(txn), now, tg_id).run();
   return { ok: true, updated_at: now };
 }
 
@@ -2513,13 +2582,13 @@ async function dataDeleteTxn(env, user_id, _tg_id, body) {
 
 async function dataSaveState(env, user_id, tg_id, body) {
   const now = Date.now();
-  // Dual-write: insert keyed by tg_id (legacy PK) but always set user_id too.
-  // COALESCE pattern preserves fields not in this update.
+  // Keyed by user_id; tg_id is stored as a legacy column when known.
+  // COALESCE pattern preserves sections not included in this update.
   await env.DB.prepare(`
-    INSERT INTO user_state (tg_id, user_id, accounts, categories, fixed_expenses, goals, settings, updated_at)
+    INSERT INTO user_state (user_id, tg_id, accounts, categories, fixed_expenses, goals, settings, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(tg_id) DO UPDATE SET
-      user_id = excluded.user_id,
+    ON CONFLICT(user_id) DO UPDATE SET
+      tg_id = COALESCE(excluded.tg_id, user_state.tg_id),
       accounts = COALESCE(excluded.accounts, user_state.accounts),
       categories = COALESCE(excluded.categories, user_state.categories),
       fixed_expenses = COALESCE(excluded.fixed_expenses, user_state.fixed_expenses),
@@ -2527,7 +2596,7 @@ async function dataSaveState(env, user_id, tg_id, body) {
       settings = COALESCE(excluded.settings, user_state.settings),
       updated_at = excluded.updated_at
   `).bind(
-    tg_id, user_id,
+    user_id, tg_id,
     body.accounts != null ? JSON.stringify(body.accounts) : null,
     body.categories != null ? JSON.stringify(body.categories) : null,
     body.fixed_expenses != null ? JSON.stringify(body.fixed_expenses) : null,
@@ -2546,11 +2615,11 @@ async function dataMigrate(env, user_id, tg_id, body) {
   // D1 supports batch inserts via .batch()
   if (txns.length > 0) {
     const stmt = env.DB.prepare(`
-      INSERT INTO user_transactions (tg_id, user_id, txn_id, data, updated_at, deleted)
+      INSERT INTO user_transactions (user_id, txn_id, data, updated_at, tg_id, deleted)
       VALUES (?, ?, ?, ?, ?, 0)
-      ON CONFLICT(tg_id, txn_id) DO NOTHING
+      ON CONFLICT(user_id, txn_id) DO NOTHING
     `);
-    const batched = txns.filter(t => t && t.id).map(t => stmt.bind(tg_id, user_id, t.id, JSON.stringify(t), now));
+    const batched = txns.filter(t => t && t.id).map(t => stmt.bind(user_id, t.id, JSON.stringify(t), now, tg_id));
     // D1 has a per-batch size limit; chunk to be safe
     for (let i = 0; i < batched.length; i += 50) {
       await env.DB.batch(batched.slice(i, i + 50));
@@ -2871,6 +2940,7 @@ async function handleAuthApi(request, env, url) {
     if (sub === 'refresh')             return jsonResp(await authRefresh(env, body, request), 200, cors);
     if (sub === 'sessions/list')       return jsonResp(await authSessionsList(env, body, request), 200, cors);
     if (sub === 'sessions/revoke')     return jsonResp(await authSessionsRevoke(env, body, request), 200, cors);
+    if (sub === 'account/delete')      return jsonResp(await authAccountDelete(env, body, request), 200, cors);
     return jsonResp({ error: 'Not found' }, 404, cors);
   } catch (e) {
     console.error('[auth-api]', e);
@@ -3140,6 +3210,49 @@ async function authUnlink(env, body, request) {
 
   await env.DB.prepare(`DELETE FROM user_identifiers WHERE type = ? AND value = ?`).bind(type, value).run();
   await logAuditEvent(env, { user_id, event_type: 'unlink_identifier', identifier_type: type, identifier_value: value, ip });
+  return { ok: true };
+}
+
+// Permanently deletes the caller's account and all associated data. Required by Apple App
+// Store Guideline 5.1.1(v) for any app that offers account creation. Hard-deletes user data
+// (transactions, state) and identifiers, drops all sessions (signs out everywhere + voids
+// refresh tokens), and tombstones the user_accounts row — keeping the id but clearing PII and
+// setting deleted_at — so the id is never reused and an audit trail survives. Authorization
+// comes from a Bearer JWT (native apps) or initData (Mini App) via resolveAuthUser.
+async function authAccountDelete(env, body, request) {
+  const user_id = await resolveAuthUser(env, body, request);
+  if (!user_id) return { ok: false, error: 'Auth failed' };
+  const ip = request.headers.get('CF-Connecting-IP') || null;
+  const now = Date.now();
+
+  // Resolve the legacy tg_id (if any) so we also clear rows keyed only by tg_id.
+  let tg_id = null;
+  const tgRow = await env.DB.prepare(
+    `SELECT value FROM user_identifiers WHERE type = 'telegram' AND user_id = ? LIMIT 1`
+  ).bind(user_id).first();
+  if (tgRow) tg_id = parseInt(tgRow.value, 10);
+
+  // 1. User data — transactions + state. Mirrors dataReset; deletes by either key.
+  await env.DB.prepare(`DELETE FROM user_transactions WHERE user_id = ? OR tg_id = ?`).bind(user_id, tg_id).run();
+  await env.DB.prepare(`DELETE FROM user_state WHERE user_id = ? OR tg_id = ?`).bind(user_id, tg_id).run();
+  // 2. Identifiers — removes every way to reach the account (email, telegram, future apple id).
+  await env.DB.prepare(`DELETE FROM user_identifiers WHERE user_id = ?`).bind(user_id).run();
+  // 3. Sessions — sign out everywhere and drop refresh tokens.
+  await env.DB.prepare(`DELETE FROM sessions WHERE user_id = ?`).bind(user_id).run();
+  // 4. Tombstone the account row: keep the id, clear PII, mark deleted + disabled.
+  await env.DB.prepare(`
+    UPDATE user_accounts
+    SET deleted_at = ?, is_disabled = 1, display_name = NULL,
+        subscription_status = 'free', subscription_provider = NULL, subscription_expires_at = NULL
+    WHERE id = ?
+  `).bind(now, user_id).run();
+  // 5. Legacy Telegram profile/analytics row, if this account was ever a Telegram user.
+  if (tg_id != null) {
+    try { await env.DB.prepare(`DELETE FROM users WHERE tg_id = ?`).bind(tg_id).run(); } catch {}
+  }
+  await logAuditEvent(env, {
+    user_id, event_type: 'account_delete', ip, user_agent: request.headers.get('User-Agent') || null
+  });
   return { ok: true };
 }
 
