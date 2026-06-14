@@ -1914,6 +1914,26 @@ async function sendTelegramMessage(env, chatId, text, extra = {}) {
 // Each transaction: { date (ISO), amount (number), currency, type, description,
 //                     suggested_category_id (string|null), confidence (0-1) }
 // ─────────────────────────────────────────────────────────────────────────────
+// ── Per-user monthly quota for the AI features ──────────────────────────────
+// AI features (statement parsing, coach comments) are free but capped per user so
+// the Anthropic bill can't run away or be abused. Enforced only when we can
+// identify the caller (JWT / Telegram initData); unauthenticated legacy callers
+// fall back to the per-IP limits, so the live Mini App keeps working unchanged.
+// Reuses the rate_limits table via checkRateLimit; a unit is consumed up front so an
+// over-quota call never reaches (and bills) Anthropic. Fails open on a store hiccup.
+const AI_QUOTA_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // ~1 month
+const AI_QUOTA_PARSE = 5;      // statement parses / user / month (Sonnet vision — pricey)
+const AI_QUOTA_COMMENTS = 300; // coach comments / user / month (Haiku — cheap, generous)
+
+async function withinUserQuota(env, key, maxPerWindow) {
+  try {
+    return await checkRateLimit(env, key, maxPerWindow, AI_QUOTA_WINDOW_MS);
+  } catch (e) {
+    console.error('[quota] check failed (allowing):', e.message);
+    return true; // never block a legit user on a quota-store error
+  }
+}
+
 async function handleParseStatement(request, env) {
   // Handle CORS preflight
   const baseCors = corsHeaders(request, env);
@@ -1945,6 +1965,16 @@ async function handleParseStatement(request, env) {
     const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
     if (!await checkRateLimit(env, `parse:ip:${ip}`, 20, 60 * 60 * 1000)) {
       return new Response(JSON.stringify({ ok: false, error: 'Too many requests. Try again in a bit.' }), { status: 429, headers: cors });
+    }
+
+    // Authenticate when possible (Flutter sends a JWT; Mini App may send initData) and
+    // meter authenticated callers per-user. Unauthenticated legacy callers keep only the
+    // per-IP limit above — non-breaking for the live Mini App, while the native app (which
+    // always sends a JWT) is properly capped.
+    let userId = null;
+    try { userId = await resolveAuthUser(env, body, request); } catch (_) { userId = null; }
+    if (userId && !await withinUserQuota(env, `parse:user:${userId}`, AI_QUOTA_PARSE)) {
+      return new Response(JSON.stringify({ ok: false, code: 'quota_exceeded', error: `Monthly statement-import limit reached (${AI_QUOTA_PARSE}/month). It resets next month.` }), { status: 429, headers: cors });
     }
 
     // Build a category list for the prompt. Expense categories only — income/transfers detection
@@ -3277,6 +3307,17 @@ async function handleAnthropicProxy(request, env) {
       });
     }
   } catch (e) { console.error('[proxy] rate-limit check failed (allowing):', e.message); }
+
+  // Meter authenticated callers (Flutter sends a JWT) per-user so the AI-comment bill
+  // can't run away. The raw body is forwarded verbatim to Anthropic, so auth rides on the
+  // Authorization header only; legacy unauthenticated callers keep just the per-IP limit.
+  let userId = null;
+  try { userId = await resolveAuthUser(env, null, request); } catch (_) { userId = null; }
+  if (userId && !await withinUserQuota(env, `ai:user:${userId}`, AI_QUOTA_COMMENTS)) {
+    return new Response(JSON.stringify({ error: { type: 'quota_exceeded', message: `Monthly AI limit reached (${AI_QUOTA_COMMENTS}/month). It resets next month.` } }), {
+      status: 429, headers: { 'Content-Type': 'application/json', ...cors }
+    });
+  }
 
   const body = await request.text();
   const response = await fetch('https://api.anthropic.com/v1/messages', {
